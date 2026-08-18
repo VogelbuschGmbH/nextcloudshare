@@ -1,0 +1,21 @@
+{
+  "SchemaVersion": 1,
+  "ServerUrl": "https://cloud.example.com",
+  "RemoteUploadFolder": "/NextcloudShare",
+  "RemoteSyncRoot": "/",
+  "SubscriptionsEnabled": true,
+  "Defaults": {
+    "ShareMode": "Public",
+    "ExpiryDays": 14
+  },
+  "UserOverrides": {
+    "ServerUrl": false,
+    "RemoteUploadFolder": false,
+    "ShareDefaults": true
+  },
+  "Migration": {
+    "LegacyUserDataSubpath": "",
+    "LegacyConfigFileName": "config.json",
+    "LegacyShellKeys": []
+  }
+}
