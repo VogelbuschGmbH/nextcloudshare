@@ -2,6 +2,10 @@
 
 NextcloudShare adds **Share via Nextcloud** and **Share via Nextcloud (options)** to Windows Explorer. It uploads local files when required, creates internal or public links, copies the result to the clipboard, and can create object subscriptions through the separate Nextcloud app **Abonnieren**.
 
+## Demo
+
+![Creating a Nextcloud share from Windows Explorer](nextcloudshare-demo.gif)
+
 ## Requirements
 
 - Windows 10 or 11 with Windows PowerShell 5.1
