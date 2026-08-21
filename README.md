@@ -1,4 +1,4 @@
-# NextcloudShare 2.0.0
+# NextcloudShare 2.0.1
 
 NextcloudShare adds **Share via Nextcloud** and **Share via Nextcloud (options)** to Windows Explorer. It uploads local files when required, creates internal or public links, copies the result to the clipboard, and can create object subscriptions through the separate Nextcloud app **Abonnieren**.
 
@@ -85,9 +85,15 @@ Event mask: upload `1`, modification `2`, deletion `4`, download `8`.
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Program Files\NextcloudShare\Uninstall-NextcloudShare.ps1"
 ```
 
-User credentials, the central configuration and logs are deliberately preserved
-so that a later reinstall can reuse them. Remove the two data directories
-manually only when this retained state is no longer required.
+Uninstall removes `%ProgramFiles%\NextcloudShare` and `%ProgramData%\NextcloudShare`.
+When run interactively, it asks whether to delete `%LOCALAPPDATA%\NextcloudShare`
+from every user profile (credentials and logs). The default is to keep that data
+so a later reinstall can reuse it. For a silent uninstall that also removes user
+data:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Program Files\NextcloudShare\Uninstall-NextcloudShare.ps1" -RemoveUserData
+```
 
 ## License
 

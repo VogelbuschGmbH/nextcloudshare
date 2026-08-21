@@ -8,7 +8,8 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$productVersion = '2.0.0'
+$productVersion = '2.0.1'
+$activeSetupVersion = ($productVersion -replace '\.', ',') + ',0'
 $activeSetupGuid = '{8A55C457-62A4-4ED5-90F3-884DA52DBF10}'
 $programFilesRoot = if (-not [string]::IsNullOrWhiteSpace($env:ProgramW6432)) { $env:ProgramW6432 } else { $env:ProgramFiles }
 $installDirectory = Join-Path $programFilesRoot 'NextcloudShare'
@@ -20,7 +21,9 @@ $files = @(
     'NextcloudShare.vbs',
     'Configure-NextcloudShare.ps1',
     'Migrate-NextcloudShareUser.ps1',
-    'Uninstall-NextcloudShare.ps1',
+    'Uninstall-NextcloudShare.ps1'
+)
+$optionalFiles = @(
     'NextcloudShare.config.example.json',
     'LICENSE',
     'README.md'
@@ -123,7 +126,7 @@ function Test-CurrentInstallation {
         return $false
     }
     try {
-        if ([string]($activeSetup.GetValue('Version', '')) -ne '2,0,0,0') {
+        if ([string]($activeSetup.GetValue('Version', '')) -ne $activeSetupVersion) {
             Write-InstallLog 'Installationsprüfung: Active-Setup-Version ist veraltet.'
             return $false
         }
@@ -210,8 +213,15 @@ foreach ($file in $files) {
 }
 
 New-Item -ItemType Directory -Path $installDirectory -Force | Out-Null
-foreach ($file in $files) {
+foreach ($file in ($files + $optionalFiles)) {
     $source = Join-Path $PSScriptRoot $file
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        if ($optionalFiles -contains $file) {
+            Write-InstallLog "Optionale Datei '$file' fehlt in '$PSScriptRoot' und wird übersprungen."
+            continue
+        }
+        throw "Die Installationsdatei '$file' fehlt in '$PSScriptRoot'."
+    }
     $destination = Join-Path $installDirectory $file
     if (-not [string]::Equals([IO.Path]::GetFullPath($source), [IO.Path]::GetFullPath($destination), [StringComparison]::OrdinalIgnoreCase)) {
         Copy-Item -LiteralPath $source -Destination $destination -Force
@@ -231,7 +241,7 @@ try {
         $migrationPath = Join-Path $installDirectory 'Migrate-NextcloudShareUser.ps1'
         $stubPath = '"{0}" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{1}"' -f $powershellPath, $migrationPath
         $activeSetup.SetValue('', 'NextcloudShare Benutzer-Migration', [Microsoft.Win32.RegistryValueKind]::String)
-        $activeSetup.SetValue('Version', '2,0,0,0', [Microsoft.Win32.RegistryValueKind]::String)
+        $activeSetup.SetValue('Version', $activeSetupVersion, [Microsoft.Win32.RegistryValueKind]::String)
         $activeSetup.SetValue('IsInstalled', 1, [Microsoft.Win32.RegistryValueKind]::DWord)
         $activeSetup.SetValue('StubPath', $stubPath, [Microsoft.Win32.RegistryValueKind]::String)
     }
