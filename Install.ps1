@@ -20,7 +20,9 @@ $files = @(
     'NextcloudShare.vbs',
     'Configure-NextcloudShare.ps1',
     'Migrate-NextcloudShareUser.ps1',
-    'Uninstall-NextcloudShare.ps1',
+    'Uninstall-NextcloudShare.ps1'
+)
+$optionalFiles = @(
     'NextcloudShare.config.example.json',
     'LICENSE',
     'README.md'
@@ -210,8 +212,15 @@ foreach ($file in $files) {
 }
 
 New-Item -ItemType Directory -Path $installDirectory -Force | Out-Null
-foreach ($file in $files) {
+foreach ($file in ($files + $optionalFiles)) {
     $source = Join-Path $PSScriptRoot $file
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        if ($optionalFiles -contains $file) {
+            Write-InstallLog "Optionale Datei '$file' fehlt in '$PSScriptRoot' und wird übersprungen."
+            continue
+        }
+        throw "Die Installationsdatei '$file' fehlt in '$PSScriptRoot'."
+    }
     $destination = Join-Path $installDirectory $file
     if (-not [string]::Equals([IO.Path]::GetFullPath($source), [IO.Path]::GetFullPath($destination), [StringComparison]::OrdinalIgnoreCase)) {
         Copy-Item -LiteralPath $source -Destination $destination -Force
