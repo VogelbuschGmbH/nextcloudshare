@@ -1,4 +1,4 @@
-# NextcloudShare 2.0.0
+# NextcloudShare 2.0.1
 
 NextcloudShare adds **Share via Nextcloud** and **Share via Nextcloud (options)** to Windows Explorer. It uploads local files when required, creates internal or public links, copies the result to the clipboard, and can create object subscriptions through the separate Nextcloud app **Abonnieren**.
 

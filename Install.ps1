@@ -8,7 +8,8 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$productVersion = '2.0.0'
+$productVersion = '2.0.1'
+$activeSetupVersion = ($productVersion -replace '\.', ',') + ',0'
 $activeSetupGuid = '{8A55C457-62A4-4ED5-90F3-884DA52DBF10}'
 $programFilesRoot = if (-not [string]::IsNullOrWhiteSpace($env:ProgramW6432)) { $env:ProgramW6432 } else { $env:ProgramFiles }
 $installDirectory = Join-Path $programFilesRoot 'NextcloudShare'
@@ -125,7 +126,7 @@ function Test-CurrentInstallation {
         return $false
     }
     try {
-        if ([string]($activeSetup.GetValue('Version', '')) -ne '2,0,0,0') {
+        if ([string]($activeSetup.GetValue('Version', '')) -ne $activeSetupVersion) {
             Write-InstallLog 'Installationsprüfung: Active-Setup-Version ist veraltet.'
             return $false
         }
@@ -240,7 +241,7 @@ try {
         $migrationPath = Join-Path $installDirectory 'Migrate-NextcloudShareUser.ps1'
         $stubPath = '"{0}" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{1}"' -f $powershellPath, $migrationPath
         $activeSetup.SetValue('', 'NextcloudShare Benutzer-Migration', [Microsoft.Win32.RegistryValueKind]::String)
-        $activeSetup.SetValue('Version', '2,0,0,0', [Microsoft.Win32.RegistryValueKind]::String)
+        $activeSetup.SetValue('Version', $activeSetupVersion, [Microsoft.Win32.RegistryValueKind]::String)
         $activeSetup.SetValue('IsInstalled', 1, [Microsoft.Win32.RegistryValueKind]::DWord)
         $activeSetup.SetValue('StubPath', $stubPath, [Microsoft.Win32.RegistryValueKind]::String)
     }

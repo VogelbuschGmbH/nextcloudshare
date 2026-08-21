@@ -1,6 +1,8 @@
 ﻿Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
+$script:ProductVersion = '2.0.1'
+
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Net.Http
@@ -299,7 +301,7 @@ function New-NextcloudHttpClient {
     $client = [System.Net.Http.HttpClient]::new()
     $client.Timeout = [TimeSpan]::FromHours(4)
     $client.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Basic', $token)
-    $client.DefaultRequestHeaders.UserAgent.ParseAdd('NextcloudShare/2.0.0')
+    $client.DefaultRequestHeaders.UserAgent.ParseAdd("NextcloudShare/$script:ProductVersion")
     return $client
 }
 
@@ -364,7 +366,7 @@ function Start-NextcloudLoginFlow {
 
     $client = [System.Net.Http.HttpClient]::new()
     $client.Timeout = [TimeSpan]::FromSeconds(30)
-    $client.DefaultRequestHeaders.UserAgent.ParseAdd('NextcloudShare/2.0.0')
+    $client.DefaultRequestHeaders.UserAgent.ParseAdd("NextcloudShare/$script:ProductVersion")
     try {
         if ($StatusCallback) { & $StatusCallback 'Nextcloud-Anmeldung wird vorbereitet ...' }
         $startResponse = Invoke-HttpRequest -Client $client -Method 'POST' -Uri "$baseUrl/index.php/login/v2"
