@@ -65,10 +65,11 @@ The quick command uses the configured defaults. The options dialog supports:
 - public or internal link;
 - for internal links, a user search box with matching accounts and permissions applied to every selected user;
 - read, edit, create and delete permissions as applicable;
-- expiry and optional password;
+- expiry for public and internal shares;
+- optional password for public links only;
 - notifications for download, upload, modification and deletion.
 
-Internal shares use the Nextcloud Sharee API to find users and create user shares (`shareType` 0). The internal file link is still copied to the clipboard. Notification choices are available only for public links and when `SubscriptionsEnabled` is true. NextcloudShare sends the numeric share ID and event mask to Abonnieren. The app validates ownership, resolves the shared object and creates or updates the single object-wide subscription. If this fails, NextcloudShare removes the newly created public link so no partial result remains.
+Internal shares use the Nextcloud Sharee API to find users and create user shares (`shareType` 0). The internal file link is still copied to the clipboard. Notification choices are available when `SubscriptionsEnabled` is true. NextcloudShare sends the numeric share ID and event mask to Abonnieren. The app validates ownership, resolves the shared object and creates or updates the single object-wide subscription. If this fails, NextcloudShare removes the newly created shares so no partial result remains.
 
 Event mask: upload `1`, modification `2`, deletion `4`, download `8`.
 

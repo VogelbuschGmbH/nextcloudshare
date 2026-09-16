@@ -974,6 +974,7 @@ function New-UserShare {
         [Parameter(Mandatory = $true)]$Config,
         [Parameter(Mandatory = $true)][string]$RemotePath,
         [Parameter(Mandatory = $true)][string]$ShareWith,
+        [int]$ExpiryDays = 14,
         [ValidateSet(1, 3, 15)][int]$Permissions = 1
     )
 
@@ -982,6 +983,7 @@ function New-UserShare {
     $pairs.Add([Collections.Generic.KeyValuePair[string,string]]::new('shareType', '0'))
     $pairs.Add([Collections.Generic.KeyValuePair[string,string]]::new('shareWith', $ShareWith))
     $pairs.Add([Collections.Generic.KeyValuePair[string,string]]::new('permissions', [string]$Permissions))
+    if ($ExpiryDays -gt 0) { $pairs.Add([Collections.Generic.KeyValuePair[string,string]]::new('expireDate', (Get-Date).AddDays($ExpiryDays).ToString('yyyy-MM-dd'))) }
 
     $content = [System.Net.Http.FormUrlEncodedContent]::new($pairs)
     $response = Invoke-HttpRequest -Client $Client -Method 'POST' -Uri (Get-OcsUri $Config 'apps/files_sharing/api/v1/shares') -Content $content -Headers @{ 'OCS-APIRequest' = 'true'; 'Accept' = 'application/json' }
@@ -1016,6 +1018,28 @@ function New-UserShare {
         AlreadyShared = $false
         ShareWith     = $ShareWith
     }
+}
+
+function Get-NextcloudShareIdsForPath {
+    param(
+        [Parameter(Mandatory = $true)][System.Net.Http.HttpClient]$Client,
+        [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)][string]$RemotePath
+    )
+
+    $uri = Get-OcsUri $Config ('apps/files_sharing/api/v1/shares?format=json&reshares=false&path={0}' -f [Uri]::EscapeDataString($RemotePath))
+    $response = Invoke-HttpRequest -Client $Client -Method 'GET' -Uri $uri -Headers @{ 'OCS-APIRequest' = 'true'; 'Accept' = 'application/json' }
+    if (-not $response.IsSuccess) { return @() }
+    try { $result = $response.Body | ConvertFrom-Json }
+    catch { return @() }
+    if (-not (Test-OcsSuccess $result)) { return @() }
+
+    $ids = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($item in @($result.ocs.data)) {
+        $shareId = Get-ShareIdFromData -Data $item
+        if (-not [string]::IsNullOrWhiteSpace($shareId)) { $ids.Add($shareId) }
+    }
+    return $ids
 }
 
 function Get-InternalFileLink {
@@ -1181,32 +1205,32 @@ function Show-ShareOptionsDialog {
     $form.Controls.Add($notifyOnDeletion)
 
     $userLabel = New-Object Windows.Forms.Label
-    $userLabel.Location = New-Object Drawing.Point(18, 151)
+    $userLabel.Location = New-Object Drawing.Point(18, 292)
     $userLabel.Size = New-Object Drawing.Size(150, 22)
     $userLabel.Text = 'Benutzer:'
     $form.Controls.Add($userLabel)
 
     $userSearch = New-Object Windows.Forms.TextBox
-    $userSearch.Location = New-Object Drawing.Point(175, 148)
+    $userSearch.Location = New-Object Drawing.Point(175, 289)
     $userSearch.Size = New-Object Drawing.Size(310, 24)
     $form.Controls.Add($userSearch)
     $searchTip = New-Object Windows.Forms.ToolTip
     $searchTip.SetToolTip($userSearch, 'Name oder Benutzername eingeben')
 
     $selectedUsers = New-Object Windows.Forms.ListBox
-    $selectedUsers.Location = New-Object Drawing.Point(175, 178)
+    $selectedUsers.Location = New-Object Drawing.Point(175, 319)
     $selectedUsers.Size = New-Object Drawing.Size(310, 96)
     $selectedUsers.IntegralHeight = $false
     $form.Controls.Add($selectedUsers)
 
     $removeUser = New-Object Windows.Forms.Button
-    $removeUser.Location = New-Object Drawing.Point(175, 280)
+    $removeUser.Location = New-Object Drawing.Point(175, 421)
     $removeUser.Size = New-Object Drawing.Size(110, 26)
     $removeUser.Text = 'Entfernen'
     $form.Controls.Add($removeUser)
 
     $suggestions = New-Object Windows.Forms.ListBox
-    $suggestions.Location = New-Object Drawing.Point(175, 172)
+    $suggestions.Location = New-Object Drawing.Point(175, 313)
     $suggestions.Size = New-Object Drawing.Size(310, 120)
     $suggestions.IntegralHeight = $false
     $suggestions.Visible = $false
@@ -1398,25 +1422,28 @@ function Show-ShareOptionsDialog {
         $selectedPermissions = @(1, 3, 15)[$permission.SelectedIndex]
         $shareIsFolder = $LocalPaths.Count -gt 1
         $permission.Enabled = $true
-        $expiry.Visible = $external
-        $expiryLabel.Visible = $external
-        $password.Visible = $external
-        $passwordLabel.Visible = $external
-        $notificationLabel.Visible = $external
-        $notifyOnDownload.Visible = $external
-        $notifyOnUpload.Visible = $external
-        $notifyOnModification.Visible = $external
-        $notifyOnDeletion.Visible = $external
+        $expiry.Visible = $true
+        $expiryLabel.Visible = $true
+        $password.Visible = $true
+        $passwordLabel.Visible = $true
+        $notificationLabel.Visible = $true
+        $notifyOnDownload.Visible = $true
+        $notifyOnUpload.Visible = $true
+        $notifyOnModification.Visible = $true
+        $notifyOnDeletion.Visible = $true
+        $expiry.Enabled = $true
+        $password.Enabled = $external
+        if (-not $external) { $password.Text = '' }
         $userLabel.Visible = -not $external
         $userSearch.Visible = -not $external
         $selectedUsers.Visible = -not $external
         $removeUser.Visible = -not $external
         if ($external) { & $hideSuggestions }
         $subscriptionsEnabled = -not ($Config.PSObject.Properties.Name -contains 'SubscriptionsEnabled') -or [bool]$Config.SubscriptionsEnabled
-        $notifyOnDownload.Enabled = ($external -and $subscriptionsEnabled)
-        $notifyOnUpload.Enabled = ($external -and $subscriptionsEnabled -and $shareIsFolder -and (($selectedPermissions -band 4) -ne 0))
-        $notifyOnModification.Enabled = ($external -and $subscriptionsEnabled -and (($selectedPermissions -band 2) -ne 0))
-        $notifyOnDeletion.Enabled = ($external -and $subscriptionsEnabled -and $shareIsFolder -and (($selectedPermissions -band 8) -ne 0))
+        $notifyOnDownload.Enabled = $subscriptionsEnabled
+        $notifyOnUpload.Enabled = ($subscriptionsEnabled -and $shareIsFolder -and (($selectedPermissions -band 4) -ne 0))
+        $notifyOnModification.Enabled = ($subscriptionsEnabled -and (($selectedPermissions -band 2) -ne 0))
+        $notifyOnDeletion.Enabled = ($subscriptionsEnabled -and $shareIsFolder -and (($selectedPermissions -band 8) -ne 0))
         if (-not $notifyOnDownload.Enabled) { $notifyOnDownload.Checked = $false }
         if (-not $notifyOnUpload.Enabled) { $notifyOnUpload.Checked = $false }
         if (-not $notifyOnModification.Enabled) { $notifyOnModification.Checked = $false }
@@ -1424,17 +1451,19 @@ function Show-ShareOptionsDialog {
         if ($external) {
             $hint.Text = 'Die Auswahl erstellt oder aktualisiert das Abonnement für diese Datei beziehungsweise diesen Ordner.'
             $hint.Location = New-Object Drawing.Point(18, 292)
-            $form.Size = New-Object Drawing.Size(520, 452)
+            $form.ClientSize = New-Object Drawing.Size(504, 412)
             $ok.Location = New-Object Drawing.Point(300, 370)
             $cancel.Location = New-Object Drawing.Point(397, 370)
         }
         else {
-            $hint.Text = 'Die ausgewählten Benutzer erhalten Zugriff mit der oben gewählten Berechtigung. Der interne Link wird in die Zwischenablage kopiert.'
-            $hint.Location = New-Object Drawing.Point(18, 316)
-            $form.Size = New-Object Drawing.Size(520, 500)
-            $ok.Location = New-Object Drawing.Point(300, 418)
-            $cancel.Location = New-Object Drawing.Point(397, 418)
+            $hint.Text = 'Die ausgewählten Benutzer erhalten Zugriff mit der oben gewählten Berechtigung und Ablaufzeit. Der interne Link wird in die Zwischenablage kopiert.'
+            $hint.Location = New-Object Drawing.Point(18, 456)
+            $form.ClientSize = New-Object Drawing.Size(504, 560)
+            $ok.Location = New-Object Drawing.Point(300, 516)
+            $cancel.Location = New-Object Drawing.Point(397, 516)
         }
+        $ok.BringToFront()
+        $cancel.BringToFront()
     }
     $mode.Add_SelectedIndexChanged($updateControls)
     $permission.Add_SelectedIndexChanged($updateControls)
@@ -1451,18 +1480,16 @@ function Show-ShareOptionsDialog {
         if ($form.ShowDialog() -ne [Windows.Forms.DialogResult]::OK) { return $null }
         $sharePermissions = @(1, 3, 15)[$permission.SelectedIndex]
         $notificationEvents = 0
-        if ($mode.SelectedIndex -eq 0) {
-            if ($notifyOnUpload.Checked) { $notificationEvents = $notificationEvents -bor 1 }
-            if ($notifyOnModification.Checked) { $notificationEvents = $notificationEvents -bor 2 }
-            if ($notifyOnDeletion.Checked) { $notificationEvents = $notificationEvents -bor 4 }
-            if ($notifyOnDownload.Checked) { $notificationEvents = $notificationEvents -bor 8 }
-        }
+        if ($notifyOnUpload.Checked) { $notificationEvents = $notificationEvents -bor 1 }
+        if ($notifyOnModification.Checked) { $notificationEvents = $notificationEvents -bor 2 }
+        if ($notifyOnDeletion.Checked) { $notificationEvents = $notificationEvents -bor 4 }
+        if ($notifyOnDownload.Checked) { $notificationEvents = $notificationEvents -bor 8 }
         $shareWith = @($state.SelectedUsers | ForEach-Object { $_.ShareWith })
         if ($mode.SelectedIndex -ne 1) { $shareWith = @() }
         return [pscustomobject]@{
             Mode               = if ($mode.SelectedIndex -eq 1) { 'Internal' } else { 'Public' }
             ExpiryDays         = [int]$expiry.Value
-            Password           = $password.Text
+            Password           = if ($mode.SelectedIndex -eq 0) { $password.Text } else { '' }
             Permissions        = [int]$sharePermissions
             NotificationEvents = [int]$notificationEvents
             ShareWith          = $shareWith
