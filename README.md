@@ -1,4 +1,4 @@
-# NextcloudShare 2.0.1
+# NextcloudShare 2.1.0
 
 NextcloudShare adds **Share via Nextcloud** and **Share via Nextcloud (options)** to Windows Explorer. It uploads local files when required, creates internal or public links, copies the result to the clipboard, and can create object subscriptions through the separate Nextcloud app **Abonnieren**.
 
@@ -63,11 +63,12 @@ The installer is suitable for computer-wide deployment as Administrator or `SYST
 The quick command uses the configured defaults. The options dialog supports:
 
 - public or internal link;
+- for internal links, a user search box with matching accounts and permissions applied to every selected user;
 - read, edit, create and delete permissions as applicable;
 - expiry and optional password;
 - notifications for download, upload, modification and deletion.
 
-Notification choices are available only for public links and when `SubscriptionsEnabled` is true. NextcloudShare sends the numeric share ID and event mask to Abonnieren. The app validates ownership, resolves the shared object and creates or updates the single object-wide subscription. If this fails, NextcloudShare removes the newly created public link so no partial result remains.
+Internal shares use the Nextcloud Sharee API to find users and create user shares (`shareType` 0). The internal file link is still copied to the clipboard. Notification choices are available only for public links and when `SubscriptionsEnabled` is true. NextcloudShare sends the numeric share ID and event mask to Abonnieren. The app validates ownership, resolves the shared object and creates or updates the single object-wide subscription. If this fails, NextcloudShare removes the newly created public link so no partial result remains.
 
 Event mask: upload `1`, modification `2`, deletion `4`, download `8`.
 

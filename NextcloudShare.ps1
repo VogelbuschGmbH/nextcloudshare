@@ -155,7 +155,7 @@ try {
         $optionsResult
     }
     else {
-        [pscustomobject]@{ Mode = $config.DefaultMode; ExpiryDays = [int]$config.DefaultExpiryDays; Password = ''; Permissions = 1; NotificationEvents = 0 }
+        [pscustomobject]@{ Mode = $config.DefaultMode; ExpiryDays = [int]$config.DefaultExpiryDays; Password = ''; Permissions = 1; NotificationEvents = 0; ShareWith = @() }
     }
     if ($null -eq $choice) { exit 0 }
     $sharePassword = [string]$choice.Password
@@ -199,8 +199,32 @@ try {
         }
 
         Set-ProgressText $progress 'Freigabelink wird erzeugt ...'
-        Write-NextcloudShareLog "Freigabe wird erstellt. Typ=$($choice.Mode); AblaufTage=$($choice.ExpiryDays); Berechtigungen=$([int]$choice.Permissions); Benachrichtigungsmaske=$([int]$choice.NotificationEvents)"
+        $shareWithUsers = @()
+        if ($choice.PSObject.Properties.Name -contains 'ShareWith' -and $null -ne $choice.ShareWith) {
+            $shareWithUsers = @($choice.ShareWith | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
+        }
+        Write-NextcloudShareLog "Freigabe wird erstellt. Typ=$($choice.Mode); AblaufTage=$($choice.ExpiryDays); Berechtigungen=$([int]$choice.Permissions); Benachrichtigungsmaske=$([int]$choice.NotificationEvents); Empfänger=$($shareWithUsers.Count)"
         if ($choice.Mode -eq 'Internal') {
+            if ($shareWithUsers.Count -gt 0) {
+                Set-ProgressText $progress 'Benutzerfreigaben werden erstellt ...'
+                $createdShareIds = New-Object 'System.Collections.Generic.List[string]'
+                try {
+                    foreach ($shareWith in $shareWithUsers) {
+                        $userShare = New-UserShare -Client $client -Config $config -RemotePath $remotePath -ShareWith $shareWith -Permissions ([int]$choice.Permissions)
+                        if (-not [string]::IsNullOrWhiteSpace([string]$userShare.ShareId)) {
+                            $createdShareIds.Add([string]$userShare.ShareId)
+                        }
+                    }
+                }
+                catch {
+                    $shareError = $_.Exception.Message
+                    foreach ($shareId in $createdShareIds) {
+                        try { Remove-PublicShare -Client $client -Config $config -ShareId $shareId } catch { }
+                    }
+                    throw "$shareError Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen."
+                }
+            }
+            Set-ProgressText $progress 'Interner Link wird erzeugt ...'
             $link = Get-InternalFileLink -Client $client -Config $config -RemotePath $remotePath
         }
         else {

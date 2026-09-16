@@ -1,11 +1,26 @@
 ﻿Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$script:ProductVersion = '2.0.1'
+$script:ProductVersion = '2.1.0'
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Net.Http
+
+if (-not ('NextcloudShare.Sharee' -as [type])) {
+    Add-Type -TypeDefinition @'
+namespace NextcloudShare {
+    public class Sharee {
+        public string ShareWith { get; set; }
+        public string Label { get; set; }
+        public string Display { get; set; }
+        public override string ToString() {
+            return string.IsNullOrWhiteSpace(Display) ? ShareWith : Display;
+        }
+    }
+}
+'@
+}
 
 function Get-NextcloudShareDataDirectory {
     $path = Join-Path $env:LOCALAPPDATA 'NextcloudShare'
@@ -865,6 +880,144 @@ function Remove-PublicShare {
     }
 }
 
+function ConvertTo-NextcloudSharee {
+    param($Entry)
+
+    if ($null -eq $Entry) { return $null }
+    $names = @($Entry.PSObject.Properties.Name)
+    $shareWith = $null
+    $label = $null
+    if ($names -contains 'label' -and -not [string]::IsNullOrWhiteSpace([string]$Entry.label)) {
+        $label = [string]$Entry.label
+    }
+    if ($names -contains 'value' -and $null -ne $Entry.value) {
+        $valueNames = @($Entry.value.PSObject.Properties.Name)
+        if ($valueNames -contains 'shareType' -and [int]$Entry.value.shareType -ne 0) {
+            return $null
+        }
+        if ($valueNames -contains 'shareWith') {
+            $shareWith = [string]$Entry.value.shareWith
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($shareWith) -and $names -contains 'shareWith') {
+        $shareWith = [string]$Entry.shareWith
+    }
+    if ([string]::IsNullOrWhiteSpace($shareWith)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($label)) { $label = $shareWith }
+    $display = if ([string]::Equals($label, $shareWith, [StringComparison]::OrdinalIgnoreCase)) {
+        $label
+    }
+    else {
+        "$label ($shareWith)"
+    }
+    $sharee = New-Object NextcloudShare.Sharee
+    $sharee.ShareWith = $shareWith
+    $sharee.Label = $label
+    $sharee.Display = $display
+    return $sharee
+}
+
+function Search-NextcloudSharees {
+    param(
+        [Parameter(Mandatory = $true)][System.Net.Http.HttpClient]$Client,
+        [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)][string]$Search,
+        [ValidateSet('file', 'folder')][string]$ItemType = 'file'
+    )
+
+    $relative = 'apps/files_sharing/api/v1/sharees?format=json&lookup=false&perPage=20&shareType=0&itemType={0}&search={1}' -f [Uri]::EscapeDataString($ItemType), [Uri]::EscapeDataString($Search)
+    $response = Invoke-HttpRequest -Client $Client -Method 'GET' -Uri (Get-OcsUri $Config $relative) -Headers @{ 'OCS-APIRequest' = 'true'; 'Accept' = 'application/json' }
+    if (-not $response.IsSuccess) {
+        throw "Die Benutzersuche ist fehlgeschlagen: $(Get-HttpErrorText $response)"
+    }
+    try { $result = $response.Body | ConvertFrom-Json }
+    catch { throw 'Nextcloud hat für die Benutzersuche keine gültige JSON-Antwort geliefert.' }
+    if (-not (Test-OcsSuccess $result)) {
+        throw "Die Benutzersuche ist fehlgeschlagen: $($result.ocs.meta.message)"
+    }
+
+    $found = New-Object 'System.Collections.Generic.List[NextcloudShare.Sharee]'
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $groups = New-Object 'System.Collections.Generic.List[object]'
+    $data = $result.ocs.data
+    if ($null -ne $data) {
+        $dataNames = @($data.PSObject.Properties.Name)
+        if ($dataNames -contains 'exact' -and $null -ne $data.exact) {
+            $exactNames = @($data.exact.PSObject.Properties.Name)
+            if ($exactNames -contains 'users') { $groups.Add($data.exact.users) }
+        }
+        if ($dataNames -contains 'users') { $groups.Add($data.users) }
+    }
+    foreach ($group in $groups) {
+        foreach ($entry in @($group)) {
+            $user = ConvertTo-NextcloudSharee $entry
+            if ($null -eq $user) { continue }
+            if ($seen.Add($user.ShareWith)) { $found.Add($user) }
+        }
+    }
+    return $found
+}
+
+function Test-AlreadySharedError {
+    param([string]$Message)
+
+    if ([string]::IsNullOrWhiteSpace($Message)) { return $false }
+    $normalized = $Message.ToLowerInvariant()
+    return ($normalized -match 'already shared') -or
+        ($normalized -match 'bereits (geteilt|freigegeben)') -or
+        ($normalized -match 'path is already shared')
+}
+
+function New-UserShare {
+    param(
+        [Parameter(Mandatory = $true)][System.Net.Http.HttpClient]$Client,
+        [Parameter(Mandatory = $true)]$Config,
+        [Parameter(Mandatory = $true)][string]$RemotePath,
+        [Parameter(Mandatory = $true)][string]$ShareWith,
+        [ValidateSet(1, 3, 15)][int]$Permissions = 1
+    )
+
+    $pairs = New-Object 'System.Collections.Generic.List[System.Collections.Generic.KeyValuePair[string,string]]'
+    $pairs.Add([Collections.Generic.KeyValuePair[string,string]]::new('path', $RemotePath))
+    $pairs.Add([Collections.Generic.KeyValuePair[string,string]]::new('shareType', '0'))
+    $pairs.Add([Collections.Generic.KeyValuePair[string,string]]::new('shareWith', $ShareWith))
+    $pairs.Add([Collections.Generic.KeyValuePair[string,string]]::new('permissions', [string]$Permissions))
+
+    $content = [System.Net.Http.FormUrlEncodedContent]::new($pairs)
+    $response = Invoke-HttpRequest -Client $Client -Method 'POST' -Uri (Get-OcsUri $Config 'apps/files_sharing/api/v1/shares') -Content $content -Headers @{ 'OCS-APIRequest' = 'true'; 'Accept' = 'application/json' }
+    if (-not $response.IsSuccess) {
+        $errorText = Get-HttpErrorText $response
+        if (Test-AlreadySharedError $errorText) {
+            return [pscustomobject]@{
+                ShareId       = $null
+                AlreadyShared = $true
+                ShareWith     = $ShareWith
+            }
+        }
+        throw "Die Freigabe für den Benutzer konnte nicht erzeugt werden: $errorText"
+    }
+
+    try { $result = $response.Body | ConvertFrom-Json }
+    catch { throw 'Nextcloud hat beim Erstellen der Benutzerfreigabe keine gültige JSON-Antwort geliefert.' }
+    if (-not (Test-OcsSuccess $result)) {
+        $message = [string]$result.ocs.meta.message
+        if (Test-AlreadySharedError $message) {
+            return [pscustomobject]@{
+                ShareId       = $null
+                AlreadyShared = $true
+                ShareWith     = $ShareWith
+            }
+        }
+        throw "Die Freigabe für den Benutzer konnte nicht erzeugt werden: $message"
+    }
+    $shareId = Get-ShareIdFromData -Data $result.ocs.data
+    return [pscustomobject]@{
+        ShareId       = $shareId
+        AlreadyShared = $false
+        ShareWith     = $ShareWith
+    }
+}
+
 function Get-InternalFileLink {
     param(
         [Parameter(Mandatory = $true)][System.Net.Http.HttpClient]$Client,
@@ -905,6 +1058,14 @@ function Show-ShareOptionsDialog {
         [Parameter(Mandatory = $true)]$Config,
         [Parameter(Mandatory = $true)][string[]]$LocalPaths
     )
+
+    $state = @{
+        SearchClient      = $null
+        SearchErrorShown  = $false
+        SelectedUsers     = New-Object 'System.Collections.Generic.List[NextcloudShare.Sharee]'
+    }
+    $searchTimer = New-Object Windows.Forms.Timer
+    $searchTimer.Interval = 300
 
     $form = New-Object Windows.Forms.Form
     $form.Text = 'Über Nextcloud teilen'
@@ -1019,17 +1180,49 @@ function Show-ShareOptionsDialog {
     $notifyOnDeletion.Checked = $false
     $form.Controls.Add($notifyOnDeletion)
 
+    $userLabel = New-Object Windows.Forms.Label
+    $userLabel.Location = New-Object Drawing.Point(18, 151)
+    $userLabel.Size = New-Object Drawing.Size(150, 22)
+    $userLabel.Text = 'Benutzer:'
+    $form.Controls.Add($userLabel)
+
+    $userSearch = New-Object Windows.Forms.TextBox
+    $userSearch.Location = New-Object Drawing.Point(175, 148)
+    $userSearch.Size = New-Object Drawing.Size(310, 24)
+    $form.Controls.Add($userSearch)
+    $searchTip = New-Object Windows.Forms.ToolTip
+    $searchTip.SetToolTip($userSearch, 'Name oder Benutzername eingeben')
+
+    $selectedUsers = New-Object Windows.Forms.ListBox
+    $selectedUsers.Location = New-Object Drawing.Point(175, 178)
+    $selectedUsers.Size = New-Object Drawing.Size(310, 96)
+    $selectedUsers.IntegralHeight = $false
+    $form.Controls.Add($selectedUsers)
+
+    $removeUser = New-Object Windows.Forms.Button
+    $removeUser.Location = New-Object Drawing.Point(175, 280)
+    $removeUser.Size = New-Object Drawing.Size(110, 26)
+    $removeUser.Text = 'Entfernen'
+    $form.Controls.Add($removeUser)
+
+    $suggestions = New-Object Windows.Forms.ListBox
+    $suggestions.Location = New-Object Drawing.Point(175, 172)
+    $suggestions.Size = New-Object Drawing.Size(310, 120)
+    $suggestions.IntegralHeight = $false
+    $suggestions.Visible = $false
+    $form.Controls.Add($suggestions)
+    $suggestions.BringToFront()
+
     $hint = New-Object Windows.Forms.Label
     $hint.Location = New-Object Drawing.Point(18, 292)
     $hint.Size = New-Object Drawing.Size(465, 44)
-    $hint.Text = 'Die Auswahl erstellt oder aktualisiert das Abonnement für diese Datei beziehungsweise diesen Ordner.'
     $form.Controls.Add($hint)
 
     $ok = New-Object Windows.Forms.Button
     $ok.Location = New-Object Drawing.Point(300, 370)
     $ok.Size = New-Object Drawing.Size(88, 28)
     $ok.Text = 'Teilen'
-    $ok.DialogResult = [Windows.Forms.DialogResult]::OK
+    $ok.DialogResult = [Windows.Forms.DialogResult]::None
     $form.Controls.Add($ok)
     $form.AcceptButton = $ok
 
@@ -1041,13 +1234,184 @@ function Show-ShareOptionsDialog {
     $form.Controls.Add($cancel)
     $form.CancelButton = $cancel
 
+    $hideSuggestions = {
+        $suggestions.Visible = $false
+        $suggestions.Items.Clear()
+    }
+
+    $addSelectedSharee = {
+        param($Sharee)
+        if ($null -eq $Sharee) { return }
+        foreach ($existing in $state.SelectedUsers) {
+            if ([string]::Equals($existing.ShareWith, $Sharee.ShareWith, [StringComparison]::OrdinalIgnoreCase)) {
+                return
+            }
+        }
+        $state.SelectedUsers.Add($Sharee)
+        [void]$selectedUsers.Items.Add($Sharee)
+        $userSearch.Text = ''
+        & $hideSuggestions
+        $userSearch.Focus()
+    }
+
+    $searchTimer.Add_Tick({
+        $searchTimer.Stop()
+        try {
+            $query = $userSearch.Text.Trim()
+            if ($query.Length -lt 1 -or $mode.SelectedIndex -ne 1) {
+                & $hideSuggestions
+                return
+            }
+            if ($null -eq $state.SearchClient) {
+                try {
+                    $state.SearchClient = New-NextcloudHttpClient $Config
+                }
+                catch {
+                    if (-not $state.SearchErrorShown) {
+                        $state.SearchErrorShown = $true
+                        [Windows.Forms.MessageBox]::Show(
+                            $_.Exception.Message,
+                            'Benutzersuche',
+                            'OK',
+                            'Warning'
+                        ) | Out-Null
+                    }
+                    return
+                }
+            }
+            $itemType = if ($LocalPaths.Count -gt 1) { 'folder' } else { 'file' }
+            $results = @(Search-NextcloudSharees -Client $state.SearchClient -Config $Config -Search $query -ItemType $itemType)
+            $suggestions.BeginUpdate()
+            try {
+                $suggestions.Items.Clear()
+                foreach ($user in $results) {
+                    $alreadySelected = $false
+                    foreach ($existing in $state.SelectedUsers) {
+                        if ([string]::Equals($existing.ShareWith, $user.ShareWith, [StringComparison]::OrdinalIgnoreCase)) {
+                            $alreadySelected = $true
+                            break
+                        }
+                    }
+                    if ($alreadySelected) { continue }
+                    if (-not [string]::IsNullOrWhiteSpace([string]$Config.Username) -and
+                        [string]::Equals($user.ShareWith, [string]$Config.Username, [StringComparison]::OrdinalIgnoreCase)) {
+                        continue
+                    }
+                    [void]$suggestions.Items.Add($user)
+                }
+            }
+            finally {
+                $suggestions.EndUpdate()
+            }
+            if ($suggestions.Items.Count -gt 0) {
+                $suggestions.SelectedIndex = 0
+                $suggestions.Visible = $true
+                $suggestions.BringToFront()
+            }
+            else {
+                $suggestions.Visible = $false
+            }
+        }
+        catch {
+            & $hideSuggestions
+        }
+    })
+
+    $userSearch.Add_TextChanged({
+        $searchTimer.Stop()
+        if ($userSearch.Text.Trim().Length -lt 1) {
+            & $hideSuggestions
+            return
+        }
+        $searchTimer.Start()
+    })
+    $userSearch.Add_KeyDown({
+        if ($_.KeyCode -eq 'Enter') {
+            $_.SuppressKeyPress = $true
+            $_.Handled = $true
+            if ($suggestions.Visible -and $suggestions.Items.Count -gt 0) {
+                $item = $suggestions.SelectedItem
+                if ($null -eq $item) { $item = $suggestions.Items[0] }
+                & $addSelectedSharee $item
+            }
+        }
+        elseif ($_.KeyCode -eq 'Down' -and $suggestions.Visible -and $suggestions.Items.Count -gt 0) {
+            $_.Handled = $true
+            $suggestions.Focus()
+            if ($suggestions.SelectedIndex -lt 0) { $suggestions.SelectedIndex = 0 }
+        }
+        elseif ($_.KeyCode -eq 'Escape' -and $suggestions.Visible) {
+            $_.Handled = $true
+            & $hideSuggestions
+        }
+    })
+    $suggestions.Add_Click({
+        if ($null -ne $suggestions.SelectedItem) {
+            & $addSelectedSharee $suggestions.SelectedItem
+        }
+    })
+    $suggestions.Add_KeyDown({
+        if ($_.KeyCode -eq 'Enter' -and $null -ne $suggestions.SelectedItem) {
+            $_.SuppressKeyPress = $true
+            $_.Handled = $true
+            & $addSelectedSharee $suggestions.SelectedItem
+        }
+        elseif ($_.KeyCode -eq 'Escape') {
+            $_.Handled = $true
+            & $hideSuggestions
+            $userSearch.Focus()
+        }
+    })
+    $removeUser.Add_Click({
+        $index = $selectedUsers.SelectedIndex
+        if ($index -lt 0) { return }
+        $state.SelectedUsers.RemoveAt($index)
+        $selectedUsers.Items.RemoveAt($index)
+        if ($selectedUsers.Items.Count -gt 0) {
+            $selectedUsers.SelectedIndex = [Math]::Min($index, $selectedUsers.Items.Count - 1)
+        }
+    })
+    $selectedUsers.Add_KeyDown({
+        if ($_.KeyCode -eq 'Delete') {
+            $removeUser.PerformClick()
+            $_.Handled = $true
+        }
+    })
+
+    $ok.Add_Click({
+        if ($mode.SelectedIndex -eq 1 -and $state.SelectedUsers.Count -lt 1) {
+            [Windows.Forms.MessageBox]::Show(
+                'Bitte wählen Sie mindestens einen Benutzer aus, der Zugriff erhalten soll.',
+                'Über Nextcloud teilen',
+                'OK',
+                'Information'
+            ) | Out-Null
+            $userSearch.Focus()
+            return
+        }
+        $form.DialogResult = [Windows.Forms.DialogResult]::OK
+        $form.Close()
+    })
+
     $updateControls = {
         $external = $mode.SelectedIndex -eq 0
         $selectedPermissions = @(1, 3, 15)[$permission.SelectedIndex]
         $shareIsFolder = $LocalPaths.Count -gt 1
-        $permission.Enabled = $external
-        $expiry.Enabled = $external
-        $password.Enabled = $external
+        $permission.Enabled = $true
+        $expiry.Visible = $external
+        $expiryLabel.Visible = $external
+        $password.Visible = $external
+        $passwordLabel.Visible = $external
+        $notificationLabel.Visible = $external
+        $notifyOnDownload.Visible = $external
+        $notifyOnUpload.Visible = $external
+        $notifyOnModification.Visible = $external
+        $notifyOnDeletion.Visible = $external
+        $userLabel.Visible = -not $external
+        $userSearch.Visible = -not $external
+        $selectedUsers.Visible = -not $external
+        $removeUser.Visible = -not $external
+        if ($external) { & $hideSuggestions }
         $subscriptionsEnabled = -not ($Config.PSObject.Properties.Name -contains 'SubscriptionsEnabled') -or [bool]$Config.SubscriptionsEnabled
         $notifyOnDownload.Enabled = ($external -and $subscriptionsEnabled)
         $notifyOnUpload.Enabled = ($external -and $subscriptionsEnabled -and $shareIsFolder -and (($selectedPermissions -band 4) -ne 0))
@@ -1057,6 +1421,20 @@ function Show-ShareOptionsDialog {
         if (-not $notifyOnUpload.Enabled) { $notifyOnUpload.Checked = $false }
         if (-not $notifyOnModification.Enabled) { $notifyOnModification.Checked = $false }
         if (-not $notifyOnDeletion.Enabled) { $notifyOnDeletion.Checked = $false }
+        if ($external) {
+            $hint.Text = 'Die Auswahl erstellt oder aktualisiert das Abonnement für diese Datei beziehungsweise diesen Ordner.'
+            $hint.Location = New-Object Drawing.Point(18, 292)
+            $form.Size = New-Object Drawing.Size(520, 452)
+            $ok.Location = New-Object Drawing.Point(300, 370)
+            $cancel.Location = New-Object Drawing.Point(397, 370)
+        }
+        else {
+            $hint.Text = 'Die ausgewählten Benutzer erhalten Zugriff mit der oben gewählten Berechtigung. Der interne Link wird in die Zwischenablage kopiert.'
+            $hint.Location = New-Object Drawing.Point(18, 316)
+            $form.Size = New-Object Drawing.Size(520, 500)
+            $ok.Location = New-Object Drawing.Point(300, 418)
+            $cancel.Location = New-Object Drawing.Point(397, 418)
+        }
     }
     $mode.Add_SelectedIndexChanged($updateControls)
     $permission.Add_SelectedIndexChanged($updateControls)
@@ -1069,21 +1447,32 @@ function Show-ShareOptionsDialog {
         $form.Activate()
         $form.BringToFront()
     })
-    if ($form.ShowDialog() -ne [Windows.Forms.DialogResult]::OK) { return $null }
-    $sharePermissions = if ($mode.SelectedIndex -eq 0) { @(1, 3, 15)[$permission.SelectedIndex] } else { 1 }
-    $notificationEvents = 0
-    if ($mode.SelectedIndex -eq 0) {
-        if ($notifyOnUpload.Checked) { $notificationEvents = $notificationEvents -bor 1 }
-        if ($notifyOnModification.Checked) { $notificationEvents = $notificationEvents -bor 2 }
-        if ($notifyOnDeletion.Checked) { $notificationEvents = $notificationEvents -bor 4 }
-        if ($notifyOnDownload.Checked) { $notificationEvents = $notificationEvents -bor 8 }
+    try {
+        if ($form.ShowDialog() -ne [Windows.Forms.DialogResult]::OK) { return $null }
+        $sharePermissions = @(1, 3, 15)[$permission.SelectedIndex]
+        $notificationEvents = 0
+        if ($mode.SelectedIndex -eq 0) {
+            if ($notifyOnUpload.Checked) { $notificationEvents = $notificationEvents -bor 1 }
+            if ($notifyOnModification.Checked) { $notificationEvents = $notificationEvents -bor 2 }
+            if ($notifyOnDeletion.Checked) { $notificationEvents = $notificationEvents -bor 4 }
+            if ($notifyOnDownload.Checked) { $notificationEvents = $notificationEvents -bor 8 }
+        }
+        $shareWith = @($state.SelectedUsers | ForEach-Object { $_.ShareWith })
+        if ($mode.SelectedIndex -ne 1) { $shareWith = @() }
+        return [pscustomobject]@{
+            Mode               = if ($mode.SelectedIndex -eq 1) { 'Internal' } else { 'Public' }
+            ExpiryDays         = [int]$expiry.Value
+            Password           = $password.Text
+            Permissions        = [int]$sharePermissions
+            NotificationEvents = [int]$notificationEvents
+            ShareWith          = $shareWith
+        }
     }
-    return [pscustomobject]@{
-        Mode        = if ($mode.SelectedIndex -eq 1) { 'Internal' } else { 'Public' }
-        ExpiryDays  = [int]$expiry.Value
-        Password    = $password.Text
-        Permissions = [int]$sharePermissions
-        NotificationEvents = [int]$notificationEvents
+    finally {
+        $searchTimer.Stop()
+        $searchTimer.Dispose()
+        if ($null -ne $state.SearchClient) { $state.SearchClient.Dispose() }
+        $form.Dispose()
     }
 }
 
