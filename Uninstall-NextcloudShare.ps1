@@ -166,8 +166,12 @@ finally {
     $localMachine.Dispose()
 }
 
-$shortcutPath = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'
-if (Test-Path -LiteralPath $shortcutPath) { Remove-Item -LiteralPath $shortcutPath -Force }
+foreach ($candidate in @(
+    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'),
+    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Configure Nextcloud Share.lnk')
+)) {
+    if (Test-Path -LiteralPath $candidate) { Remove-Item -LiteralPath $candidate -Force }
+}
 
 Write-UninstallLog 'Deinstallation erfolgreich abgeschlossen.'
 

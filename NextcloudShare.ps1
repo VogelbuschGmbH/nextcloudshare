@@ -51,7 +51,7 @@ function Join-NextcloudShareExplorerBatch {
     try {
         try { $ownsMutex = $mutex.WaitOne(5000) }
         catch [Threading.AbandonedMutexException] { $ownsMutex = $true }
-        if (-not $ownsMutex) { throw 'Die Mehrfachauswahl konnte nicht gesammelt werden. Bitte versuchen Sie es erneut.' }
+        if (-not $ownsMutex) { throw (Get-NextcloudShareText 'MultiSelectFailed') }
 
         $useExistingBatch = $false
         if (Test-Path -LiteralPath $batchPath -PathType Leaf) {
@@ -82,7 +82,7 @@ function Join-NextcloudShareExplorerBatch {
     try {
         try { $ownsMutex = $mutex.WaitOne(5000) }
         catch [Threading.AbandonedMutexException] { $ownsMutex = $true }
-        if (-not $ownsMutex) { throw 'Die Mehrfachauswahl konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.' }
+        if (-not $ownsMutex) { throw (Get-NextcloudShareText 'MultiSelectIncomplete') }
 
         $collected = if (Test-Path -LiteralPath $batchPath -PathType Leaf) {
             @([IO.File]::ReadAllLines($batchPath, [Text.Encoding]::UTF8))
@@ -116,7 +116,7 @@ try {
     }
 
     if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw 'Bitte wählen Sie mindestens eine Datei im Windows-Explorer aus.'
+        throw (Get-NextcloudShareText 'SelectFile')
     }
 
     $batch = Join-NextcloudShareExplorerBatch -Mode $Mode -SelectedPath $Path
@@ -127,11 +127,11 @@ try {
     [string[]]$paths = @($batch.Paths)
     foreach ($selectedPath in $paths) {
         if (-not (Test-Path -LiteralPath $selectedPath -PathType Leaf)) {
-            throw "Die ausgewählte Datei ist nicht mehr verfügbar: $selectedPath"
+            throw (Get-NextcloudShareText 'FileUnavailable' -FormatArgs @($selectedPath))
         }
     }
     $itemCount = $paths.Count
-    $itemDescription = if ($itemCount -eq 1) { [IO.Path]::GetFileName($paths[0]) } else { "$itemCount Dateien" }
+    $itemDescription = if ($itemCount -eq 1) { [IO.Path]::GetFileName($paths[0]) } else { Get-NextcloudShareText 'ItemCountFiles' -FormatArgs @($itemCount) }
     Write-NextcloudShareLog "Explorer-Auswahl gesammelt. Anzahl=$itemCount"
 
     $config = Get-NextcloudShareConfig
@@ -160,17 +160,17 @@ try {
     if ($null -eq $choice) { exit 0 }
     $sharePassword = [string]$choice.Password
 
-    $progress = Show-ProgressWindow 'Verbindung mit Nextcloud wird hergestellt ...'
+    $progress = Show-ProgressWindow (Get-NextcloudShareText 'ProgressConnecting')
     $client = $null
     try {
         $client = New-NextcloudHttpClient $config
         if ($itemCount -gt 1) {
             Write-NextcloudShareLog 'Mehrfachauswahl wird in einen neuen Nextcloud-Ordner hochgeladen.'
-            Set-ProgressText $progress 'Zielordner wird in Nextcloud angelegt ...'
+            Set-ProgressText $progress (Get-NextcloudShareText 'ProgressCreateFolder')
             $remotePath = New-RemoteUploadBatchFolder -Client $client -Config $config
             for ($index = 0; $index -lt $itemCount; $index++) {
                 $currentPath = $paths[$index]
-                Set-ProgressText $progress ("Datei {0} von {1} wird hochgeladen ..." -f ($index + 1), $itemCount)
+                Set-ProgressText $progress (Get-NextcloudShareText 'ProgressUploadFile' -FormatArgs @(($index + 1), $itemCount))
                 $remoteFilePath = Get-UniqueRemotePathInFolder -Client $client -Config $config -RemoteFolder $remotePath -FileName ([IO.Path]::GetFileName($currentPath))
                 Send-FileToNextcloud -Client $client -Config $config -LocalPath $currentPath -RemotePath $remoteFilePath
             }
@@ -180,25 +180,25 @@ try {
             $remotePath = Get-RemotePathForLocalItem -Config $config -LocalPath $paths[0]
             if ($null -eq $remotePath) {
                 Write-NextcloudShareLog 'Datei liegt außerhalb eines lokalen Syncordners und wird per WebDAV hochgeladen.'
-                Set-ProgressText $progress 'Datei wird nach Nextcloud hochgeladen ...'
+                Set-ProgressText $progress (Get-NextcloudShareText 'ProgressUpload')
                 $remotePath = Get-UniqueRemoteUploadPath -Client $client -Config $config -FileName ([IO.Path]::GetFileName($paths[0]))
                 Send-FileToNextcloud -Client $client -Config $config -LocalPath $paths[0] -RemotePath $remotePath
                 Write-NextcloudShareLog 'WebDAV-Upload erfolgreich abgeschlossen.'
             }
             else {
                 Write-NextcloudShareLog 'Datei liegt in einem lokalen Syncordner; Serverdatei wird geprüft.'
-                Set-ProgressText $progress 'Synchronisierte Datei wird geprüft ...'
+                Set-ProgressText $progress (Get-NextcloudShareText 'ProgressSyncCheck')
                 $found = $false
                 for ($attempt = 0; $attempt -lt 6; $attempt++) {
                     if (Test-RemoteExists -Client $client -Config $config -RemotePath $remotePath) { $found = $true; break }
                     Start-Sleep -Milliseconds 500
                     [Windows.Forms.Application]::DoEvents()
                 }
-                if (-not $found) { throw 'Die Datei ist noch nicht auf dem Nextcloud-Server vorhanden. Bitte warten Sie auf die Synchronisierung und versuchen Sie es erneut.' }
+                if (-not $found) { throw (Get-NextcloudShareText 'FileNotSynced') }
             }
         }
 
-        Set-ProgressText $progress 'Freigabelink wird erzeugt ...'
+        Set-ProgressText $progress (Get-NextcloudShareText 'ProgressCreateLink')
         $shareWithUsers = @()
         if ($choice.PSObject.Properties.Name -contains 'ShareWith' -and $null -ne $choice.ShareWith) {
             $shareWithUsers = @($choice.ShareWith | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
@@ -207,7 +207,7 @@ try {
         if ($choice.Mode -eq 'Internal') {
             $createdShareIds = New-Object 'System.Collections.Generic.List[string]'
             if ($shareWithUsers.Count -gt 0) {
-                Set-ProgressText $progress 'Benutzerfreigaben werden erstellt ...'
+                Set-ProgressText $progress (Get-NextcloudShareText 'ProgressUserShares')
                 try {
                     foreach ($shareWith in $shareWithUsers) {
                         $userShare = New-UserShare -Client $client -Config $config -RemotePath $remotePath -ShareWith $shareWith -ExpiryDays ([int]$choice.ExpiryDays) -Permissions ([int]$choice.Permissions)
@@ -221,7 +221,7 @@ try {
                     foreach ($shareId in $createdShareIds) {
                         try { Remove-PublicShare -Client $client -Config $config -ShareId $shareId } catch { }
                     }
-                    throw "$shareError Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen."
+                    throw (Get-NextcloudShareText 'UserSharesRolledBack' -FormatArgs @($shareError))
                 }
             }
             if ([int]$choice.NotificationEvents -gt 0) {
@@ -237,9 +237,9 @@ try {
                     foreach ($shareId in $createdShareIds) {
                         try { Remove-PublicShare -Client $client -Config $config -ShareId $shareId } catch { }
                     }
-                    throw 'Die E-Mail-Benachrichtigungen konnten nicht aktiviert werden, weil keine Freigabe-ID ermittelt wurde. Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen.'
+                    throw (Get-NextcloudShareText 'NotificationsNoShareId')
                 }
-                Set-ProgressText $progress 'E-Mail-Benachrichtigungen werden aktiviert ...'
+                Set-ProgressText $progress (Get-NextcloudShareText 'ProgressNotifications')
                 try {
                     Enable-PublicShareNotifications -Client $client -Config $config -ShareId $notifyShareId -EventMask ([int]$choice.NotificationEvents)
                     Write-NextcloudShareLog "E-Mail-Benachrichtigungen für die Freigabe aktiviert. Maske=$([int]$choice.NotificationEvents)"
@@ -249,10 +249,10 @@ try {
                     foreach ($shareId in $createdShareIds) {
                         try { Remove-PublicShare -Client $client -Config $config -ShareId $shareId } catch { }
                     }
-                    throw "$activationError Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen."
+                    throw (Get-NextcloudShareText 'UserSharesRolledBack' -FormatArgs @($activationError))
                 }
             }
-            Set-ProgressText $progress 'Interner Link wird erzeugt ...'
+            Set-ProgressText $progress (Get-NextcloudShareText 'ProgressInternalLink')
             $link = Get-InternalFileLink -Client $client -Config $config -RemotePath $remotePath
         }
         else {
@@ -268,13 +268,13 @@ try {
                 }
                 $sharePassword = Show-RequiredSharePasswordDialog -ItemDescription $itemDescription
                 if ([string]::IsNullOrWhiteSpace($sharePassword)) { exit 0 }
-                $progress = Show-ProgressWindow 'Passwortgeschützter Freigabelink wird erzeugt ...'
+                $progress = Show-ProgressWindow (Get-NextcloudShareText 'ProgressPasswordLink')
                 $publicShare = New-PublicShare -Client $client -Config $config -RemotePath $remotePath -ExpiryDays $choice.ExpiryDays -Password $sharePassword -Permissions ([int]$choice.Permissions)
             }
             $link = [string]$publicShare.Link
 
             if ([int]$choice.NotificationEvents -gt 0) {
-                Set-ProgressText $progress 'E-Mail-Benachrichtigungen werden aktiviert ...'
+                Set-ProgressText $progress (Get-NextcloudShareText 'ProgressNotifications')
                 try {
                     Enable-PublicShareNotifications -Client $client -Config $config -ShareId ([string]$publicShare.ShareId) -EventMask ([int]$choice.NotificationEvents)
                     Write-NextcloudShareLog "E-Mail-Benachrichtigungen für die Freigabe aktiviert. Maske=$([int]$choice.NotificationEvents)"
@@ -286,9 +286,9 @@ try {
                         Write-NextcloudShareLog 'Freigabe nach fehlgeschlagener Aktivierung der E-Mail-Benachrichtigungen zurückgenommen.'
                     }
                     catch {
-                        throw "$activationError Die Freigabe konnte anschließend nicht automatisch zurückgenommen werden: $($_.Exception.Message)"
+                        throw (Get-NextcloudShareText 'PublicShareRollbackFailed' -FormatArgs @($activationError, $_.Exception.Message))
                     }
-                    throw "$activationError Die unvollständige Freigabe wurde automatisch zurückgenommen."
+                    throw (Get-NextcloudShareText 'PublicShareRolledBack' -FormatArgs @($activationError))
                 }
             }
         }
@@ -306,7 +306,7 @@ catch {
     Write-NextcloudShareLog ("Fehler: " + ($_ | Out-String))
     try {
         Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-        [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Nextcloud-Freigabe – Fehler', 'OK', 'Error') | Out-Null
+        [Windows.Forms.MessageBox]::Show($_.Exception.Message, (Get-NextcloudShareText 'ErrorTitle'), 'OK', 'Error') | Out-Null
     }
     catch { }
     exit 1

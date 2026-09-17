@@ -23,6 +23,8 @@ try {
 }
 catch {
     Write-ConfigurationLog ("FEHLER: " + ($_ | Out-String).Trim())
-    [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Nextcloud-Freigabe – Fehler', 'OK', 'Error') | Out-Null
+    $title = 'Nextcloud-Freigabe – Fehler'
+    try { $title = Get-NextcloudShareText 'ErrorTitle' } catch { }
+    [Windows.Forms.MessageBox]::Show($_.Exception.Message, $title, 'OK', 'Error') | Out-Null
     exit 1
 }

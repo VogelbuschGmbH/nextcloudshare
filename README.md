@@ -1,4 +1,4 @@
-# NextcloudShare 2.1.1
+# NextcloudShare 2.2.0
 
 NextcloudShare adds **Share via Nextcloud** and **Share via Nextcloud (options)** to Windows Explorer. It uploads local files when required, creates internal or public links, copies the result to the clipboard, and can create object subscriptions through the separate Nextcloud app **Abonnieren**.
 
@@ -43,9 +43,12 @@ Important administrator settings:
 | `RemoteUploadFolder` | Root folder for direct uploads |
 | `RemoteSyncRoot` | Server counterpart of the local sync root |
 | `SubscriptionsEnabled` | Enables integration with Abonnieren |
+| `Language` | UI language: `de` (default) or `en` |
 | `Defaults` | Default link type and expiry |
 | `UserOverrides` | Controls which values users may change |
 | `Migration` | Optional neutral migration settings for an earlier deployment |
+
+`Language` is `de` when omitted. Set `"Language": "en"` for English UI, Explorer context-menu captions, and the Start menu shortcut. Re-run the installer after changing the language so the Explorer verbs and shortcut are updated.
 
 `LegacyUserDataSubpath` and `LegacyShellKeys` are intentionally empty in the public example. An organization can fill them in its private deployment configuration without embedding internal names in the source code.
 

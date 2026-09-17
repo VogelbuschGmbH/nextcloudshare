@@ -4,6 +4,7 @@
   "RemoteUploadFolder": "/NextcloudShare",
   "RemoteSyncRoot": "/",
   "SubscriptionsEnabled": true,
+  "Language": "de",
   "Defaults": {
     "ShareMode": "Public",
     "ExpiryDays": 14
