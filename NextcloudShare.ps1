@@ -299,7 +299,7 @@ try {
         if ($null -ne $progress) { $progress.Close(); $progress.Dispose() }
     }
 
-    Show-SuccessNotification -Link $link -Password $sharePassword
+    Show-SuccessNotification -Link $link -Password $sharePassword -Mode $choice.Mode
     Write-NextcloudShareLog 'Freigabevorgang erfolgreich abgeschlossen.'
 }
 catch {

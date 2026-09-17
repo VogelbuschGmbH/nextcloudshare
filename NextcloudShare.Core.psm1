@@ -1,7 +1,7 @@
 ﻿Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$script:ProductVersion = '2.1.0'
+$script:ProductVersion = '2.1.1'
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -1456,7 +1456,7 @@ function Show-ShareOptionsDialog {
             $cancel.Location = New-Object Drawing.Point(397, 370)
         }
         else {
-            $hint.Text = 'Die ausgewählten Benutzer erhalten Zugriff mit der oben gewählten Berechtigung und Ablaufzeit. Der interne Link wird in die Zwischenablage kopiert.'
+            $hint.Text = 'Die ausgewählten Benutzer erhalten Zugriff mit der oben gewählten Berechtigung und Ablaufzeit. Der interne Link wird in die Zwischenablage kopiert und alle Benutzer per E-Mail benachrichtigt.'
             $hint.Location = New-Object Drawing.Point(18, 456)
             $form.ClientSize = New-Object Drawing.Size(504, 560)
             $ok.Location = New-Object Drawing.Point(300, 516)
@@ -1970,10 +1970,17 @@ function Show-ClipboardFallbackDialog {
 }
 
 function Show-SuccessNotification {
-    param([string]$Link, [string]$Password)
+    param(
+        [string]$Link,
+        [string]$Password,
+        [string]$Mode
+    )
     $clipboardText = $Link
     $notificationText = 'Der Link wurde in die Zwischenablage kopiert.'
-    if (-not [string]::IsNullOrWhiteSpace($Password)) {
+    if ($Mode -eq 'Internal') {
+        $notificationText = 'Der Link wurde in die Zwischenablage kopiert und alle Benutzer per E-Mail benachrichtigt.'
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($Password)) {
         $clipboardText = "Link: $Link`r`nPasswort: $Password"
         $notificationText = 'Link und Passwort wurden in die Zwischenablage kopiert.'
     }
