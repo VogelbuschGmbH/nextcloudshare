@@ -155,7 +155,7 @@ try {
         $optionsResult
     }
     else {
-        [pscustomobject]@{ Mode = $config.DefaultMode; ExpiryDays = [int]$config.DefaultExpiryDays; Password = ''; Permissions = 1; NotificationEvents = 0 }
+        [pscustomobject]@{ Mode = $config.DefaultMode; ExpiryDays = [int]$config.DefaultExpiryDays; Password = ''; Permissions = 1; NotificationEvents = 0; ShareWith = @() }
     }
     if ($null -eq $choice) { exit 0 }
     $sharePassword = [string]$choice.Password
@@ -199,8 +199,60 @@ try {
         }
 
         Set-ProgressText $progress 'Freigabelink wird erzeugt ...'
-        Write-NextcloudShareLog "Freigabe wird erstellt. Typ=$($choice.Mode); AblaufTage=$($choice.ExpiryDays); Berechtigungen=$([int]$choice.Permissions); Benachrichtigungsmaske=$([int]$choice.NotificationEvents)"
+        $shareWithUsers = @()
+        if ($choice.PSObject.Properties.Name -contains 'ShareWith' -and $null -ne $choice.ShareWith) {
+            $shareWithUsers = @($choice.ShareWith | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
+        }
+        Write-NextcloudShareLog "Freigabe wird erstellt. Typ=$($choice.Mode); AblaufTage=$($choice.ExpiryDays); Berechtigungen=$([int]$choice.Permissions); Benachrichtigungsmaske=$([int]$choice.NotificationEvents); Empfänger=$($shareWithUsers.Count)"
         if ($choice.Mode -eq 'Internal') {
+            $createdShareIds = New-Object 'System.Collections.Generic.List[string]'
+            if ($shareWithUsers.Count -gt 0) {
+                Set-ProgressText $progress 'Benutzerfreigaben werden erstellt ...'
+                try {
+                    foreach ($shareWith in $shareWithUsers) {
+                        $userShare = New-UserShare -Client $client -Config $config -RemotePath $remotePath -ShareWith $shareWith -ExpiryDays ([int]$choice.ExpiryDays) -Permissions ([int]$choice.Permissions)
+                        if (-not [string]::IsNullOrWhiteSpace([string]$userShare.ShareId)) {
+                            $createdShareIds.Add([string]$userShare.ShareId)
+                        }
+                    }
+                }
+                catch {
+                    $shareError = $_.Exception.Message
+                    foreach ($shareId in $createdShareIds) {
+                        try { Remove-PublicShare -Client $client -Config $config -ShareId $shareId } catch { }
+                    }
+                    throw "$shareError Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen."
+                }
+            }
+            if ([int]$choice.NotificationEvents -gt 0) {
+                $notifyShareId = $null
+                if ($createdShareIds.Count -gt 0) {
+                    $notifyShareId = [string]$createdShareIds[0]
+                }
+                else {
+                    $existingIds = @(Get-NextcloudShareIdsForPath -Client $client -Config $config -RemotePath $remotePath)
+                    if ($existingIds.Count -gt 0) { $notifyShareId = [string]$existingIds[0] }
+                }
+                if ([string]::IsNullOrWhiteSpace($notifyShareId)) {
+                    foreach ($shareId in $createdShareIds) {
+                        try { Remove-PublicShare -Client $client -Config $config -ShareId $shareId } catch { }
+                    }
+                    throw 'Die E-Mail-Benachrichtigungen konnten nicht aktiviert werden, weil keine Freigabe-ID ermittelt wurde. Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen.'
+                }
+                Set-ProgressText $progress 'E-Mail-Benachrichtigungen werden aktiviert ...'
+                try {
+                    Enable-PublicShareNotifications -Client $client -Config $config -ShareId $notifyShareId -EventMask ([int]$choice.NotificationEvents)
+                    Write-NextcloudShareLog "E-Mail-Benachrichtigungen für die Freigabe aktiviert. Maske=$([int]$choice.NotificationEvents)"
+                }
+                catch {
+                    $activationError = $_.Exception.Message
+                    foreach ($shareId in $createdShareIds) {
+                        try { Remove-PublicShare -Client $client -Config $config -ShareId $shareId } catch { }
+                    }
+                    throw "$activationError Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen."
+                }
+            }
+            Set-ProgressText $progress 'Interner Link wird erzeugt ...'
             $link = Get-InternalFileLink -Client $client -Config $config -RemotePath $remotePath
         }
         else {
@@ -247,7 +299,7 @@ try {
         if ($null -ne $progress) { $progress.Close(); $progress.Dispose() }
     }
 
-    Show-SuccessNotification -Link $link -Password $sharePassword
+    Show-SuccessNotification -Link $link -Password $sharePassword -Mode $choice.Mode
     Write-NextcloudShareLog 'Freigabevorgang erfolgreich abgeschlossen.'
 }
 catch {
