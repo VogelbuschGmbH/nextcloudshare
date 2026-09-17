@@ -8,7 +8,7 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$productVersion = '2.2.0'
+$productVersion = '2.2.1'
 $activeSetupVersion = ($productVersion -replace '\.', ',') + ',0'
 $activeSetupGuid = '{8A55C457-62A4-4ED5-90F3-884DA52DBF10}'
 $programFilesRoot = if (-not [string]::IsNullOrWhiteSpace($env:ProgramW6432)) { $env:ProgramW6432 } else { $env:ProgramFiles }
@@ -37,10 +37,17 @@ else {
 
 function Resolve-InstallUiLanguage {
     param($Value)
-    if ([string]::IsNullOrWhiteSpace([string]$Value)) { return 'de' }
-    $normalized = ([string]$Value).Trim().ToLowerInvariant()
-    if ($normalized -like 'en*') { return 'en' }
-    return 'de'
+    if (-not [string]::IsNullOrWhiteSpace([string]$Value)) {
+        $normalized = ([string]$Value).Trim().ToLowerInvariant()
+        if ($normalized -like 'de*') { return 'de' }
+        return 'en'
+    }
+    try {
+        $name = [string](Get-UICulture).Name
+        if ($name -like 'de*') { return 'de' }
+    }
+    catch { }
+    return 'en'
 }
 
 function Get-InstallUiLanguage {
@@ -51,13 +58,14 @@ function Get-InstallUiLanguage {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
         try {
             $json = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($json.PSObject.Properties.Name -contains 'Language') {
+            if ($json.PSObject.Properties.Name -contains 'Language' -and
+                -not [string]::IsNullOrWhiteSpace([string]$json.Language)) {
                 return (Resolve-InstallUiLanguage $json.Language)
             }
         }
         catch { }
     }
-    return 'de'
+    return (Resolve-InstallUiLanguage $null)
 }
 
 function Get-InstallStartMenuShortcutPaths {

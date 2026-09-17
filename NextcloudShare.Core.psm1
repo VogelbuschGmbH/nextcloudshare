@@ -1,7 +1,7 @@
 ﻿Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$script:ProductVersion = '2.2.0'
+$script:ProductVersion = '2.2.1'
 $script:UiLanguage = $null
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -55,17 +55,28 @@ function Get-NextcloudShareDefaultConfig {
         AllowServerUrlOverride = $true
         AllowRemoteUploadFolderOverride = $true
         AllowShareDefaultsOverride = $true
-        Language            = 'de'
+        Language            = ''
     }
+}
+
+function Get-NextcloudShareLanguageFromCulture {
+    try {
+        $name = [string](Get-UICulture).Name
+        if ($name -like 'de*') { return 'de' }
+    }
+    catch { }
+    return 'en'
 }
 
 function Resolve-NextcloudShareUiLanguage {
     param($Value)
 
-    if ([string]::IsNullOrWhiteSpace([string]$Value)) { return 'de' }
-    $normalized = ([string]$Value).Trim().ToLowerInvariant()
-    if ($normalized -like 'en*') { return 'en' }
-    return 'de'
+    if (-not [string]::IsNullOrWhiteSpace([string]$Value)) {
+        $normalized = ([string]$Value).Trim().ToLowerInvariant()
+        if ($normalized -like 'de*') { return 'de' }
+        return 'en'
+    }
+    return Get-NextcloudShareLanguageFromCulture
 }
 
 $script:NextcloudShareText = @{
@@ -299,11 +310,12 @@ function Get-NextcloudShareUiLanguage {
     if (-not [string]::IsNullOrWhiteSpace([string]$script:UiLanguage)) {
         return [string]$script:UiLanguage
     }
-    $language = 'de'
+    $language = Get-NextcloudShareLanguageFromCulture
     try {
         $admin = Get-NextcloudShareAdminConfig
-        if ($admin.PSObject.Properties.Name -contains 'Language') {
-            $language = Resolve-NextcloudShareUiLanguage $admin.Language
+        if ($admin.PSObject.Properties.Name -contains 'Language' -and
+            -not [string]::IsNullOrWhiteSpace([string]$admin.Language)) {
+            $language = [string]$admin.Language
         }
     }
     catch { }
@@ -333,7 +345,10 @@ function Get-NextcloudShareText {
 function Get-NextcloudShareAdminConfig {
     $path = Get-NextcloudShareAdminConfigPath
     $config = Get-NextcloudShareDefaultConfig
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $config }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        $config.Language = Resolve-NextcloudShareUiLanguage $config.Language
+        return $config
+    }
 
     try {
         $admin = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
