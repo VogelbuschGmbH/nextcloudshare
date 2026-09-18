@@ -35,37 +35,13 @@ else {
     [Microsoft.Win32.RegistryView]::Registry32
 }
 
-function Resolve-InstallUiLanguage {
-    param($Value)
-    if (-not [string]::IsNullOrWhiteSpace([string]$Value)) {
-        $normalized = ([string]$Value).Trim().ToLowerInvariant()
-        if ($normalized -like 'de*') { return 'de' }
-        return 'en'
-    }
+function Get-InstallUiLanguage {
     try {
         $name = [string](Get-UICulture).Name
         if ($name -like 'de*') { return 'de' }
     }
     catch { }
     return 'en'
-}
-
-function Get-InstallUiLanguage {
-    $candidates = @()
-    if (-not [string]::IsNullOrWhiteSpace($ConfigurationPath)) { $candidates += $ConfigurationPath }
-    $candidates += (Join-Path $dataDirectory 'NextcloudShare.config.json')
-    foreach ($path in $candidates) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
-        try {
-            $json = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($json.PSObject.Properties.Name -contains 'Language' -and
-                -not [string]::IsNullOrWhiteSpace([string]$json.Language)) {
-                return (Resolve-InstallUiLanguage $json.Language)
-            }
-        }
-        catch { }
-    }
-    return (Resolve-InstallUiLanguage $null)
 }
 
 function Get-InstallStartMenuShortcutPaths {

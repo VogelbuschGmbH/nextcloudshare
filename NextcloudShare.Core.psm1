@@ -55,7 +55,6 @@ function Get-NextcloudShareDefaultConfig {
         AllowServerUrlOverride = $true
         AllowRemoteUploadFolderOverride = $true
         AllowShareDefaultsOverride = $true
-        Language            = ''
     }
 }
 
@@ -66,17 +65,6 @@ function Get-NextcloudShareLanguageFromCulture {
     }
     catch { }
     return 'en'
-}
-
-function Resolve-NextcloudShareUiLanguage {
-    param($Value)
-
-    if (-not [string]::IsNullOrWhiteSpace([string]$Value)) {
-        $normalized = ([string]$Value).Trim().ToLowerInvariant()
-        if ($normalized -like 'de*') { return 'de' }
-        return 'en'
-    }
-    return Get-NextcloudShareLanguageFromCulture
 }
 
 $script:NextcloudShareText = @{
@@ -310,17 +298,8 @@ function Get-NextcloudShareUiLanguage {
     if (-not [string]::IsNullOrWhiteSpace([string]$script:UiLanguage)) {
         return [string]$script:UiLanguage
     }
-    $language = Get-NextcloudShareLanguageFromCulture
-    try {
-        $admin = Get-NextcloudShareAdminConfig
-        if ($admin.PSObject.Properties.Name -contains 'Language' -and
-            -not [string]::IsNullOrWhiteSpace([string]$admin.Language)) {
-            $language = [string]$admin.Language
-        }
-    }
-    catch { }
-    $script:UiLanguage = $language
-    return $language
+    $script:UiLanguage = Get-NextcloudShareLanguageFromCulture
+    return $script:UiLanguage
 }
 
 function Get-NextcloudShareText {
@@ -346,18 +325,16 @@ function Get-NextcloudShareAdminConfig {
     $path = Get-NextcloudShareAdminConfigPath
     $config = Get-NextcloudShareDefaultConfig
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        $config.Language = Resolve-NextcloudShareUiLanguage $config.Language
         return $config
     }
 
     try {
         $admin = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
-        foreach ($name in @('SchemaVersion', 'ServerUrl', 'RemoteUploadFolder', 'RemoteSyncRoot', 'SubscriptionsEnabled', 'Language')) {
+        foreach ($name in @('SchemaVersion', 'ServerUrl', 'RemoteUploadFolder', 'RemoteSyncRoot', 'SubscriptionsEnabled')) {
             if ($admin.PSObject.Properties.Name -contains $name) {
                 Add-Member -InputObject $config -MemberType NoteProperty -Name $name -Value $admin.$name -Force
             }
         }
-        $config.Language = Resolve-NextcloudShareUiLanguage $config.Language
         if ($admin.PSObject.Properties.Name -contains 'Defaults') {
             if ($admin.Defaults.PSObject.Properties.Name -contains 'ShareMode') { $config.DefaultMode = [string]$admin.Defaults.ShareMode }
             if ($admin.Defaults.PSObject.Properties.Name -contains 'ExpiryDays') { $config.DefaultExpiryDays = [int]$admin.Defaults.ExpiryDays }
@@ -481,8 +458,9 @@ function Get-NextcloudShareConfig {
             $config.DefaultExpiryDays = [int]$admin.DefaultExpiryDays
         }
         $config.SubscriptionsEnabled = [bool]$admin.SubscriptionsEnabled
-        $config.Language = Resolve-NextcloudShareUiLanguage $admin.Language
-        $script:UiLanguage = [string]$config.Language
+        if ($config.PSObject.Properties.Name -contains 'Language') {
+            $config.PSObject.Properties.Remove('Language')
+        }
         $authenticatedServerUrl = if ($config.PSObject.Properties.Name -contains 'AuthenticatedServerUrl') {
             [string]$config.AuthenticatedServerUrl
         }
@@ -520,6 +498,9 @@ function Get-NextcloudShareConfig {
 function Save-NextcloudShareConfig {
     param([Parameter(Mandatory = $true)]$Config)
 
+    if ($Config.PSObject.Properties.Name -contains 'Language') {
+        $Config.PSObject.Properties.Remove('Language')
+    }
     $Config | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Get-NextcloudShareConfigPath) -Encoding UTF8
 }
 

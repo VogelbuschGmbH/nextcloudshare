@@ -43,12 +43,11 @@ Important administrator settings:
 | `RemoteUploadFolder` | Root folder for direct uploads |
 | `RemoteSyncRoot` | Server counterpart of the local sync root |
 | `SubscriptionsEnabled` | Enables integration with Abonnieren |
-| `Language` | Optional UI language override: `de` or `en` |
 | `Defaults` | Default link type and expiry |
 | `UserOverrides` | Controls which values users may change |
 | `Migration` | Optional neutral migration settings for an earlier deployment |
 
-When `Language` is omitted, the UI follows Windows (`Get-UICulture`). German Windows (`de*`) uses German; any other UI culture uses English. Set `"Language": "de"` or `"Language": "en"` to force a language at install time. Re-run the installer after changing the language so the Explorer verbs and shortcut are updated.
+The UI language follows Windows (`Get-UICulture`). German Windows (`de*`) uses German; any other UI culture uses English.
 
 `LegacyUserDataSubpath` and `LegacyShellKeys` are intentionally empty in the public example. An organization can fill them in its private deployment configuration without embedding internal names in the source code.
 
