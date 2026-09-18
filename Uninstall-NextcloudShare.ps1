@@ -166,8 +166,40 @@ finally {
     $localMachine.Dispose()
 }
 
-$shortcutPath = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'
-if (Test-Path -LiteralPath $shortcutPath) { Remove-Item -LiteralPath $shortcutPath -Force }
+$users = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::Users, $registryView)
+try {
+    foreach ($sid in $users.GetSubKeyNames()) {
+        if ($sid -like '*_Classes') { continue }
+        foreach ($keyPath in @(
+            "$sid\Software\Classes\*\shell\NextcloudShare",
+            "$sid\Software\Classes\*\shell\NextcloudShareOptions"
+        )) {
+            try { $users.DeleteSubKeyTree($keyPath, $false) } catch { }
+        }
+    }
+}
+finally {
+    $users.Dispose()
+}
+
+try {
+    $currentUser = [Microsoft.Win32.Registry]::CurrentUser
+    foreach ($keyPath in @(
+        'Software\Classes\*\shell\NextcloudShare',
+        'Software\Classes\*\shell\NextcloudShareOptions'
+    )) {
+        try { $currentUser.DeleteSubKeyTree($keyPath, $false) } catch { }
+    }
+}
+catch { }
+
+foreach ($candidate in @(
+    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\NextcloudShare.lnk'),
+    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'),
+    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Configure Nextcloud Share.lnk')
+)) {
+    if (Test-Path -LiteralPath $candidate) { Remove-Item -LiteralPath $candidate -Force }
+}
 
 Write-UninstallLog 'Deinstallation erfolgreich abgeschlossen.'
 

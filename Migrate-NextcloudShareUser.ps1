@@ -65,5 +65,13 @@ if (Test-Path -LiteralPath $oldShortcut) {
     Remove-Item -LiteralPath $oldShortcut -Force
 }
 
+try {
+    Import-Module (Join-Path $PSScriptRoot 'NextcloudShare.Core.psm1') -Force -DisableNameChecking
+    Write-MigrationLog "UI-Sprache=$(Get-NextcloudShareUiLanguage)"
+}
+catch {
+    Write-MigrationLog "Explorer-Befehle konnten nicht benutzerspezifisch gesetzt werden: $($_.Exception.Message)"
+}
+
 Write-MigrationLog 'Benutzermigration erfolgreich abgeschlossen.'
 exit 0

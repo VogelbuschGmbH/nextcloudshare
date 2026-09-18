@@ -17,12 +17,15 @@ function Write-ConfigurationLog {
 
 try {
     Write-ConfigurationLog 'Dialog gestartet.'
+    Write-ConfigurationLog "UI-Sprache=$(Get-NextcloudShareUiLanguage)"
     $saved = Show-ConfigurationDialog
     if ($saved) { Write-ConfigurationLog 'Erfolgreich gespeichert.' }
     else { Write-ConfigurationLog 'Ohne Änderung geschlossen.' }
 }
 catch {
     Write-ConfigurationLog ("FEHLER: " + ($_ | Out-String).Trim())
-    [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Nextcloud-Freigabe – Fehler', 'OK', 'Error') | Out-Null
+    $title = 'Nextcloud-Freigabe – Fehler'
+    try { $title = Get-NextcloudShareText 'ErrorTitle' } catch { }
+    [Windows.Forms.MessageBox]::Show($_.Exception.Message, $title, 'OK', 'Error') | Out-Null
     exit 1
 }

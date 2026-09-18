@@ -1,7 +1,8 @@
 ﻿Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$script:ProductVersion = '2.1.1'
+$script:ProductVersion = '2.2.2'
+$script:UiLanguage = $null
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -57,10 +58,311 @@ function Get-NextcloudShareDefaultConfig {
     }
 }
 
+function Get-NextcloudShareLanguageFromCulture {
+    try {
+        $name = [string](Get-UICulture).Name
+        if ($name -like 'de*') { return 'de' }
+    }
+    catch { }
+    return 'en'
+}
+
+function Set-NextcloudShareUserShellVerbs {
+    param([string]$Language)
+
+    if ([string]::IsNullOrWhiteSpace($Language)) { return }
+    $shareCaption = if ($Language -eq 'de') { 'Über Nextcloud teilen' } else { 'Share via Nextcloud' }
+    $optionsCaption = if ($Language -eq 'de') { 'Über Nextcloud teilen (mit Optionen) ...' } else { 'Share via Nextcloud (options) ...' }
+    $wscriptPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+    $launcherPath = Join-Path $PSScriptRoot 'NextcloudShare.vbs'
+    $user = [Microsoft.Win32.Registry]::CurrentUser
+    foreach ($entry in @(
+        @{ Name = 'NextcloudShare'; Caption = $shareCaption; Mode = 'Quick' },
+        @{ Name = 'NextcloudShareOptions'; Caption = $optionsCaption; Mode = 'Options' }
+    )) {
+        $key = $user.CreateSubKey("Software\Classes\*\shell\$($entry.Name)")
+        if ($null -eq $key) { continue }
+        try {
+            $key.SetValue('MUIVerb', [string]$entry.Caption, [Microsoft.Win32.RegistryValueKind]::String)
+            $key.SetValue('Icon', 'shell32.dll,167', [Microsoft.Win32.RegistryValueKind]::String)
+            $key.SetValue('MultiSelectModel', 'Player', [Microsoft.Win32.RegistryValueKind]::String)
+            $commandKey = $key.CreateSubKey('command')
+            if ($null -eq $commandKey) { continue }
+            try {
+                $command = '"{0}" "{1}" {2} "%1"' -f $wscriptPath, $launcherPath, [string]$entry.Mode
+                $commandKey.SetValue('', $command, [Microsoft.Win32.RegistryValueKind]::String)
+            }
+            finally {
+                $commandKey.Dispose()
+            }
+        }
+        finally {
+            $key.Dispose()
+        }
+    }
+}
+
+$script:NextcloudShareText = @{
+    de = @{
+        AppTitle                    = 'Nextcloud-Freigabe'
+        ErrorTitle                  = 'Nextcloud-Freigabe – Fehler'
+        ShareDialogTitle            = 'Über Nextcloud teilen'
+        ShareTypeLabel              = 'Freigabeart:'
+        ShareTypePublic             = 'Externer Link'
+        ShareTypeInternal           = 'Interner Link (Berechtigung erforderlich)'
+        ShareTypeInternalShort      = 'Interner Link'
+        PermissionLabel             = 'Berechtigung:'
+        PermissionRead              = 'Nur lesen'
+        PermissionReadWrite         = 'Lesen und bearbeiten'
+        PermissionFull              = 'Lesen, bearbeiten, erstellen und löschen'
+        ExpiryLabel                 = 'Gültig in Tagen:'
+        PasswordLabel               = 'Optionales Passwort:'
+        NotifyLabel                 = 'Benachrichtigen bei:'
+        NotifyDownload              = 'Download'
+        NotifyUpload                = 'Upload'
+        NotifyModify                = 'Änderung'
+        NotifyDelete                = 'Löschung'
+        UsersLabel                  = 'Benutzer:'
+        RemoveUser                  = 'Entfernen'
+        ShareButton                 = 'Teilen'
+        CancelButton                = 'Abbrechen'
+        SelectUserRequired          = 'Bitte wählen Sie mindestens einen Benutzer aus, der Zugriff erhalten soll.'
+        ShareHintPublic             = 'Die Auswahl erstellt oder aktualisiert das Abonnement für diese Datei beziehungsweise diesen Ordner.'
+        ShareHintInternal           = 'Die ausgewählten Benutzer erhalten Zugriff mit der oben gewählten Berechtigung und Ablaufzeit. Der interne Link wird in die Zwischenablage kopiert und alle Benutzer per E-Mail benachrichtigt.'
+        SearchUsersTip              = 'Name oder Benutzername eingeben'
+        UserSearchTitle             = 'Benutzersuche'
+        SharedFilesFolder           = '{0} Dateien – gemeinsamer Link zu einem neuen Ordner'
+        ItemCountFiles              = '{0} Dateien'
+        PasswordDialogTitle         = 'Passwort für öffentlichen Nextcloud-Link'
+        PasswordRequiredHint        = 'Der Nextcloud-Server verlangt für öffentliche Links ein Passwort. Ein sicheres Passwort wurde automatisch erzeugt.'
+        RegeneratePassword          = 'Neu erzeugen'
+        PasswordCopyHint            = 'Nach erfolgreicher Freigabe werden Link und Passwort gemeinsam in die Zwischenablage kopiert.'
+        CreateLink                  = 'Link erstellen'
+        PasswordRequired            = 'Bitte geben Sie ein Passwort ein.'
+        ConfigureTitle              = 'Nextcloud-Freigabe konfigurieren'
+        LabelServerUrl              = 'Nextcloud-URL'
+        LabelUsername               = 'Nextcloud-Benutzer'
+        LabelLocalRoot              = 'Lokaler Nextcloud-Ordner (optional)'
+        LabelRemoteRoot             = 'Serverpfad des lokalen Ordners'
+        LabelUploadFolder           = 'Upload-Ordner'
+        Browse                      = 'Durchsuchen'
+        DefaultShareType            = 'Standard-Freigabeart'
+        DefaultExpiry               = 'Standard-Ablaufzeit (Tage)'
+        ConnectionLabel             = 'Nextcloud-Verbindung'
+        ConnectedAs                 = 'Verbunden als {0}'
+        NotConnected                = 'Noch nicht verbunden'
+        ConnectNextcloud            = 'Mit Nextcloud verbinden'
+        LoginSecurityHint           = 'Die Anmeldung wird im Standardbrowser durchgeführt. Nach „Grant access“ speichert Windows den von Nextcloud ausgestellten Zugriffstoken verschlüsselt mit DPAPI.'
+        Save                        = 'Speichern'
+        LocalFolderMissing          = 'Der angegebene lokale Nextcloud-Ordner existiert nicht. Bitte wählen Sie einen vorhandenen Ordner oder lassen Sie das Feld leer.'
+        LoginCancelled              = 'Die Nextcloud-Anmeldung wurde abgebrochen.'
+        ResolvingWebDav             = 'WebDAV-Benutzer-ID wird ermittelt ...'
+        ConnectionFailed            = 'Verbindung fehlgeschlagen'
+        LoginDialogTitle            = 'Nextcloud-Anmeldung'
+        ConfigDialogTitle           = 'Nextcloud-Konfiguration'
+        LoginAlreadyOpen            = 'Eine Nextcloud-Anmeldung ist bereits geöffnet. Bitte schließen Sie den vorhandenen Browser-Dialog oder warten Sie kurz.'
+        LoginPreparing              = 'Nextcloud-Anmeldung wird vorbereitet ...'
+        LoginBrowserOpened          = 'Browser wurde geöffnet. Bitte Zugriff in Nextcloud erlauben ...'
+        LoginWaiting                = 'Warte auf Freigabe im Browser ...'
+        LoginFailed                 = 'Die Nextcloud-Anmeldung ist fehlgeschlagen: {0}'
+        LoginTimeout                = 'Die Nextcloud-Anmeldung wurde nicht innerhalb von {0} Minuten abgeschlossen.'
+        LoginFlowStartFailed        = 'Der Nextcloud Login Flow konnte nicht gestartet werden: {0}'
+        MissingServerUrl            = 'Die Nextcloud-URL fehlt.'
+        InvalidServerUrl            = 'Die Nextcloud-URL ist ungültig.'
+        HttpsRequired               = 'Aus Sicherheitsgründen ist für Nextcloud HTTPS erforderlich.'
+        MissingUsername             = 'Der Nextcloud-Benutzername fehlt.'
+        MissingToken                = 'Der Nextcloud-Zugriffstoken fehlt.'
+        ConfiguredFolderMissing     = 'Der konfigurierte lokale Nextcloud-Ordner existiert nicht. Bitte wählen Sie einen vorhandenen Ordner oder lassen Sie das Feld leer.'
+        MissingUploadFolder         = 'Der Upload-Ordner fehlt.'
+        InvalidShareMode            = 'Der Standard-Freigabemodus ist ungültig.'
+        SelectFile                  = 'Bitte wählen Sie mindestens eine Datei im Windows-Explorer aus.'
+        FileUnavailable             = 'Die ausgewählte Datei ist nicht mehr verfügbar: {0}'
+        FileNotSynced               = 'Die Datei ist noch nicht auf dem Nextcloud-Server vorhanden. Bitte warten Sie auf die Synchronisierung und versuchen Sie es erneut.'
+        MultiSelectFailed           = 'Die Mehrfachauswahl konnte nicht gesammelt werden. Bitte versuchen Sie es erneut.'
+        MultiSelectIncomplete       = 'Die Mehrfachauswahl konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.'
+        ProgressConnecting          = 'Verbindung mit Nextcloud wird hergestellt ...'
+        ProgressCreateFolder        = 'Zielordner wird in Nextcloud angelegt ...'
+        ProgressUploadFile          = 'Datei {0} von {1} wird hochgeladen ...'
+        ProgressUpload              = 'Datei wird nach Nextcloud hochgeladen ...'
+        ProgressSyncCheck           = 'Synchronisierte Datei wird geprüft ...'
+        ProgressCreateLink          = 'Freigabelink wird erzeugt ...'
+        ProgressUserShares          = 'Benutzerfreigaben werden erstellt ...'
+        ProgressNotifications       = 'E-Mail-Benachrichtigungen werden aktiviert ...'
+        ProgressInternalLink        = 'Interner Link wird erzeugt ...'
+        ProgressPasswordLink        = 'Passwortgeschützter Freigabelink wird erzeugt ...'
+        NotificationsNoShareId      = 'Die E-Mail-Benachrichtigungen konnten nicht aktiviert werden, weil keine Freigabe-ID ermittelt wurde. Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen.'
+        UserSharesRolledBack        = '{0} Bereits erstellte Benutzerfreigaben wurden automatisch zurückgenommen.'
+        PublicShareRolledBack       = '{0} Die unvollständige Freigabe wurde automatisch zurückgenommen.'
+        PublicShareRollbackFailed   = '{0} Die Freigabe konnte anschließend nicht automatisch zurückgenommen werden: {1}'
+        ClipboardBlocked            = 'Die Freigabe wurde erfolgreich erstellt, aber die Windows-Zwischenablage ist momentan blockiert. Markieren Sie den Text und kopieren Sie ihn mit Strg+C oder versuchen Sie es erneut.'
+        ClipboardHint               = 'Link und gegebenenfalls Passwort bleiben hier sichtbar.'
+        CopyAgain                   = 'Erneut kopieren'
+        ClipboardStillBlocked       = 'Zwischenablage weiterhin blockiert. Bitte Strg+C verwenden.'
+        Close                       = 'Schließen'
+        ClipboardDialogTitle        = 'Nextcloud-Freigabe erstellt'
+        SuccessLinkCopied           = 'Der Link wurde in die Zwischenablage kopiert.'
+        SuccessLinkAndPassword      = 'Link und Passwort wurden in die Zwischenablage kopiert.'
+        SuccessInternalNotified     = 'Der Link wurde in die Zwischenablage kopiert und alle Benutzer per E-Mail benachrichtigt.'
+        ClipboardLinkPassword       = "Link: {0}`r`nPasswort: {1}"
+        ShellShare                  = 'Über Nextcloud teilen'
+        ShellShareOptions           = 'Über Nextcloud teilen (mit Optionen) ...'
+        ConfigureShortcutName       = 'Nextcloud-Freigabe konfigurieren.lnk'
+        BatchFolderPrefix           = 'Freigabe-'
+        NotificationsFailed         = 'Die E-Mail-Benachrichtigungen konnten nicht aktiviert werden: {0}'
+        ShareCreateFailed           = 'Der Freigabelink konnte nicht erzeugt werden: {0}'
+        UserShareFailed             = 'Die Freigabe für den Benutzer konnte nicht erzeugt werden: {0}'
+        UserSearchFailed            = 'Die Benutzersuche ist fehlgeschlagen: {0}'
+        InternalLinkFailed          = 'Der interne Link konnte nicht ermittelt werden: {0}'
+        UploadFailed                = 'Die Datei konnte nicht nach Nextcloud hochgeladen werden: {0}'
+    }
+    en = @{
+        AppTitle                    = 'Nextcloud Share'
+        ErrorTitle                  = 'Nextcloud Share – Error'
+        ShareDialogTitle            = 'Share via Nextcloud'
+        ShareTypeLabel              = 'Share type:'
+        ShareTypePublic             = 'Public link'
+        ShareTypeInternal           = 'Internal link (permission required)'
+        ShareTypeInternalShort      = 'Internal link'
+        PermissionLabel             = 'Permission:'
+        PermissionRead              = 'Read only'
+        PermissionReadWrite         = 'Read and edit'
+        PermissionFull              = 'Read, edit, create and delete'
+        ExpiryLabel                 = 'Valid for days:'
+        PasswordLabel               = 'Optional password:'
+        NotifyLabel                 = 'Notify on:'
+        NotifyDownload              = 'Download'
+        NotifyUpload                = 'Upload'
+        NotifyModify                = 'Modification'
+        NotifyDelete                = 'Deletion'
+        UsersLabel                  = 'Users:'
+        RemoveUser                  = 'Remove'
+        ShareButton                 = 'Share'
+        CancelButton                = 'Cancel'
+        SelectUserRequired          = 'Please select at least one user who should receive access.'
+        ShareHintPublic             = 'This selection creates or updates the subscription for this file or folder.'
+        ShareHintInternal           = 'Selected users receive access with the permission and expiry chosen above. The internal link is copied to the clipboard and all users are notified by email.'
+        SearchUsersTip              = 'Enter a name or username'
+        UserSearchTitle             = 'User search'
+        SharedFilesFolder           = '{0} files – shared link to a new folder'
+        ItemCountFiles              = '{0} files'
+        PasswordDialogTitle         = 'Password for public Nextcloud link'
+        PasswordRequiredHint        = 'The Nextcloud server requires a password for public links. A secure password was generated automatically.'
+        RegeneratePassword          = 'Generate new'
+        PasswordCopyHint            = 'After a successful share, the link and password are copied to the clipboard together.'
+        CreateLink                  = 'Create link'
+        PasswordRequired            = 'Please enter a password.'
+        ConfigureTitle              = 'Configure Nextcloud Share'
+        LabelServerUrl              = 'Nextcloud URL'
+        LabelUsername               = 'Nextcloud user'
+        LabelLocalRoot              = 'Local Nextcloud folder (optional)'
+        LabelRemoteRoot             = 'Server path of the local folder'
+        LabelUploadFolder           = 'Upload folder'
+        Browse                      = 'Browse'
+        DefaultShareType            = 'Default share type'
+        DefaultExpiry               = 'Default expiry (days)'
+        ConnectionLabel             = 'Nextcloud connection'
+        ConnectedAs                 = 'Connected as {0}'
+        NotConnected                = 'Not connected yet'
+        ConnectNextcloud            = 'Connect to Nextcloud'
+        LoginSecurityHint           = 'Sign-in opens in your default browser. After “Grant access”, Windows stores the Nextcloud app password encrypted with DPAPI.'
+        Save                        = 'Save'
+        LocalFolderMissing          = 'The specified local Nextcloud folder does not exist. Please choose an existing folder or leave the field empty.'
+        LoginCancelled              = 'Nextcloud sign-in was cancelled.'
+        ResolvingWebDav             = 'Determining WebDAV user ID ...'
+        ConnectionFailed            = 'Connection failed'
+        LoginDialogTitle            = 'Nextcloud sign-in'
+        ConfigDialogTitle           = 'Nextcloud configuration'
+        LoginAlreadyOpen            = 'A Nextcloud sign-in is already open. Please close the existing browser dialog or wait a moment.'
+        LoginPreparing              = 'Preparing Nextcloud sign-in ...'
+        LoginBrowserOpened          = 'The browser was opened. Please grant access in Nextcloud ...'
+        LoginWaiting                = 'Waiting for approval in the browser ...'
+        LoginFailed                 = 'Nextcloud sign-in failed: {0}'
+        LoginTimeout                = 'Nextcloud sign-in was not completed within {0} minutes.'
+        LoginFlowStartFailed        = 'The Nextcloud login flow could not be started: {0}'
+        MissingServerUrl            = 'The Nextcloud URL is missing.'
+        InvalidServerUrl            = 'The Nextcloud URL is invalid.'
+        HttpsRequired               = 'HTTPS is required for Nextcloud for security reasons.'
+        MissingUsername             = 'The Nextcloud user name is missing.'
+        MissingToken                = 'The Nextcloud access token is missing.'
+        ConfiguredFolderMissing     = 'The configured local Nextcloud folder does not exist. Please choose an existing folder or leave the field empty.'
+        MissingUploadFolder         = 'The upload folder is missing.'
+        InvalidShareMode            = 'The default share mode is invalid.'
+        SelectFile                  = 'Please select at least one file in Windows Explorer.'
+        FileUnavailable             = 'The selected file is no longer available: {0}'
+        FileNotSynced               = 'The file is not yet on the Nextcloud server. Please wait for synchronization and try again.'
+        MultiSelectFailed           = 'The multiple selection could not be collected. Please try again.'
+        MultiSelectIncomplete       = 'The multiple selection could not be completed. Please try again.'
+        ProgressConnecting          = 'Connecting to Nextcloud ...'
+        ProgressCreateFolder        = 'Creating the destination folder in Nextcloud ...'
+        ProgressUploadFile          = 'Uploading file {0} of {1} ...'
+        ProgressUpload              = 'Uploading the file to Nextcloud ...'
+        ProgressSyncCheck           = 'Checking the synchronized file ...'
+        ProgressCreateLink          = 'Creating the share link ...'
+        ProgressUserShares          = 'Creating user shares ...'
+        ProgressNotifications       = 'Enabling email notifications ...'
+        ProgressInternalLink        = 'Creating the internal link ...'
+        ProgressPasswordLink        = 'Creating the password-protected share link ...'
+        NotificationsNoShareId      = 'Email notifications could not be enabled because no share ID was returned. User shares created so far were rolled back automatically.'
+        UserSharesRolledBack        = '{0} User shares created so far were rolled back automatically.'
+        PublicShareRolledBack       = '{0} The incomplete share was rolled back automatically.'
+        PublicShareRollbackFailed   = '{0} The share could not be rolled back automatically afterwards: {1}'
+        ClipboardBlocked            = 'The share was created successfully, but the Windows clipboard is currently blocked. Select the text and copy it with Ctrl+C, or try again.'
+        ClipboardHint               = 'The link and password, if any, remain visible here.'
+        CopyAgain                   = 'Copy again'
+        ClipboardStillBlocked       = 'Clipboard still blocked. Please use Ctrl+C.'
+        Close                       = 'Close'
+        ClipboardDialogTitle        = 'Nextcloud share created'
+        SuccessLinkCopied           = 'The link was copied to the clipboard.'
+        SuccessLinkAndPassword      = 'The link and password were copied to the clipboard.'
+        SuccessInternalNotified     = 'The link was copied to the clipboard and all users were notified by email.'
+        ClipboardLinkPassword       = "Link: {0}`r`nPassword: {1}"
+        ShellShare                  = 'Share via Nextcloud'
+        ShellShareOptions           = 'Share via Nextcloud (options) ...'
+        ConfigureShortcutName       = 'Configure Nextcloud Share.lnk'
+        BatchFolderPrefix           = 'Share-'
+        NotificationsFailed         = 'Email notifications could not be enabled: {0}'
+        ShareCreateFailed           = 'The share link could not be created: {0}'
+        UserShareFailed             = 'The user share could not be created: {0}'
+        UserSearchFailed            = 'User search failed: {0}'
+        InternalLinkFailed          = 'The internal link could not be determined: {0}'
+        UploadFailed                = 'The file could not be uploaded to Nextcloud: {0}'
+    }
+}
+
+function Get-NextcloudShareUiLanguage {
+    if (-not [string]::IsNullOrWhiteSpace([string]$script:UiLanguage)) {
+        return [string]$script:UiLanguage
+    }
+    $script:UiLanguage = Get-NextcloudShareLanguageFromCulture
+    try { Set-NextcloudShareUserShellVerbs -Language $script:UiLanguage } catch { }
+    return $script:UiLanguage
+}
+
+function Get-NextcloudShareText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Key,
+        [object[]]$FormatArgs
+    )
+
+    $lang = Get-NextcloudShareUiLanguage
+    $table = $script:NextcloudShareText[$lang]
+    if ($null -eq $table -or -not $table.ContainsKey($Key)) {
+        $table = $script:NextcloudShareText['de']
+    }
+    $text = [string]$table[$Key]
+    if ([string]::IsNullOrWhiteSpace($text)) { $text = $Key }
+    if ($null -ne $FormatArgs -and @($FormatArgs).Count -gt 0) {
+        return ($text -f $FormatArgs)
+    }
+    return $text
+}
+
 function Get-NextcloudShareAdminConfig {
     $path = Get-NextcloudShareAdminConfigPath
     $config = Get-NextcloudShareDefaultConfig
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $config }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return $config
+    }
 
     try {
         $admin = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -192,6 +494,9 @@ function Get-NextcloudShareConfig {
             $config.DefaultExpiryDays = [int]$admin.DefaultExpiryDays
         }
         $config.SubscriptionsEnabled = [bool]$admin.SubscriptionsEnabled
+        if ($config.PSObject.Properties.Name -contains 'Language') {
+            $config.PSObject.Properties.Remove('Language')
+        }
         $authenticatedServerUrl = if ($config.PSObject.Properties.Name -contains 'AuthenticatedServerUrl') {
             [string]$config.AuthenticatedServerUrl
         }
@@ -229,40 +534,43 @@ function Get-NextcloudShareConfig {
 function Save-NextcloudShareConfig {
     param([Parameter(Mandatory = $true)]$Config)
 
+    if ($Config.PSObject.Properties.Name -contains 'Language') {
+        $Config.PSObject.Properties.Remove('Language')
+    }
     $Config | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Get-NextcloudShareConfigPath) -Encoding UTF8
 }
 
 function Test-NextcloudShareConfig {
     param([Parameter(Mandatory = $true)]$Config)
 
-    if ([string]::IsNullOrWhiteSpace($Config.ServerUrl)) { throw 'Die Nextcloud-URL fehlt.' }
+    if ([string]::IsNullOrWhiteSpace($Config.ServerUrl)) { throw (Get-NextcloudShareText 'MissingServerUrl') }
     $uri = $null
-    if (-not [Uri]::TryCreate($Config.ServerUrl, [UriKind]::Absolute, [ref]$uri)) { throw 'Die Nextcloud-URL ist ungültig.' }
+    if (-not [Uri]::TryCreate($Config.ServerUrl, [UriKind]::Absolute, [ref]$uri)) { throw (Get-NextcloudShareText 'InvalidServerUrl') }
     if ($uri.Scheme -ne 'https' -and $uri.Host -notin @('localhost', '127.0.0.1')) {
-        throw 'Aus Sicherheitsgründen ist für Nextcloud HTTPS erforderlich.'
+        throw (Get-NextcloudShareText 'HttpsRequired')
     }
-    if ([string]::IsNullOrWhiteSpace($Config.Username)) { throw 'Der Nextcloud-Benutzername fehlt.' }
-    if ([string]::IsNullOrWhiteSpace($Config.EncryptedAppPassword)) { throw 'Der Nextcloud-Zugriffstoken fehlt.' }
+    if ([string]::IsNullOrWhiteSpace($Config.Username)) { throw (Get-NextcloudShareText 'MissingUsername') }
+    if ([string]::IsNullOrWhiteSpace($Config.EncryptedAppPassword)) { throw (Get-NextcloudShareText 'MissingToken') }
     $localRoot = if ($Config.PSObject.Properties.Name -contains 'LocalNextcloudRoot') {
         [string]$Config.LocalNextcloudRoot
     }
     else { '' }
     if (-not [string]::IsNullOrWhiteSpace($localRoot) -and
         -not (Test-Path -LiteralPath $localRoot -PathType Container)) {
-        throw 'Der konfigurierte lokale Nextcloud-Ordner existiert nicht. Bitte wählen Sie einen vorhandenen Ordner oder lassen Sie das Feld leer.'
+        throw (Get-NextcloudShareText 'ConfiguredFolderMissing')
     }
-    if ([string]::IsNullOrWhiteSpace($Config.RemoteUploadFolder)) { throw 'Der Upload-Ordner fehlt.' }
-    if ($Config.DefaultMode -notin @('Public', 'Internal')) { throw 'Der Standard-Freigabemodus ist ungültig.' }
+    if ([string]::IsNullOrWhiteSpace($Config.RemoteUploadFolder)) { throw (Get-NextcloudShareText 'MissingUploadFolder') }
+    if ($Config.DefaultMode -notin @('Public', 'Internal')) { throw (Get-NextcloudShareText 'InvalidShareMode') }
 }
 
 function Test-NextcloudServerUrl {
     param([Parameter(Mandatory = $true)][string]$ServerUrl)
 
-    if ([string]::IsNullOrWhiteSpace($ServerUrl)) { throw 'Die Nextcloud-URL fehlt.' }
+    if ([string]::IsNullOrWhiteSpace($ServerUrl)) { throw (Get-NextcloudShareText 'MissingServerUrl') }
     $uri = $null
-    if (-not [Uri]::TryCreate($ServerUrl, [UriKind]::Absolute, [ref]$uri)) { throw 'Die Nextcloud-URL ist ungültig.' }
+    if (-not [Uri]::TryCreate($ServerUrl, [UriKind]::Absolute, [ref]$uri)) { throw (Get-NextcloudShareText 'InvalidServerUrl') }
     if ($uri.Scheme -ne 'https' -and $uri.Host -notin @('localhost', '127.0.0.1')) {
-        throw 'Aus Sicherheitsgründen ist für Nextcloud HTTPS erforderlich.'
+        throw (Get-NextcloudShareText 'HttpsRequired')
     }
 }
 
@@ -371,7 +679,7 @@ function Start-NextcloudLoginFlow {
         try { $ownsMutex = $mutex.WaitOne(0) }
         catch [Threading.AbandonedMutexException] { $ownsMutex = $true }
         if (-not $ownsMutex) {
-            throw 'Eine Nextcloud-Anmeldung ist bereits geöffnet. Bitte schließen Sie den vorhandenen Browser-Dialog oder warten Sie kurz.'
+            throw (Get-NextcloudShareText 'LoginAlreadyOpen')
         }
     }
     catch {
@@ -383,10 +691,10 @@ function Start-NextcloudLoginFlow {
     $client.Timeout = [TimeSpan]::FromSeconds(30)
     $client.DefaultRequestHeaders.UserAgent.ParseAdd("NextcloudShare/$script:ProductVersion")
     try {
-        if ($StatusCallback) { & $StatusCallback 'Nextcloud-Anmeldung wird vorbereitet ...' }
+        if ($StatusCallback) { & $StatusCallback (Get-NextcloudShareText 'LoginPreparing') }
         $startResponse = Invoke-HttpRequest -Client $client -Method 'POST' -Uri "$baseUrl/index.php/login/v2"
         if (-not $startResponse.IsSuccess) {
-            throw "Der Nextcloud Login Flow konnte nicht gestartet werden: $(Get-HttpErrorText $startResponse)"
+            throw (Get-NextcloudShareText 'LoginFlowStartFailed' -FormatArgs @(Get-HttpErrorText $startResponse))
         }
 
         try { $flow = $startResponse.Body | ConvertFrom-Json }
@@ -397,7 +705,7 @@ function Start-NextcloudLoginFlow {
             throw 'Die Login-Flow-Antwort von Nextcloud ist unvollständig.'
         }
 
-        if ($StatusCallback) { & $StatusCallback 'Browser wurde geöffnet. Bitte Zugriff in Nextcloud erlauben ...' }
+        if ($StatusCallback) { & $StatusCallback (Get-NextcloudShareText 'LoginBrowserOpened') }
         Start-Process -FilePath ([string]$flow.login) | Out-Null
 
         $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
@@ -411,11 +719,11 @@ function Start-NextcloudLoginFlow {
             $pollResponse = Invoke-HttpRequest -Client $client -Method 'POST' -Uri ([string]$flow.poll.endpoint) -Content $content
 
             if ($pollResponse.StatusCode -eq 404) {
-                if ($StatusCallback) { & $StatusCallback 'Warte auf Freigabe im Browser ...' }
+                if ($StatusCallback) { & $StatusCallback (Get-NextcloudShareText 'LoginWaiting') }
                 continue
             }
             if (-not $pollResponse.IsSuccess) {
-                throw "Die Nextcloud-Anmeldung ist fehlgeschlagen: $(Get-HttpErrorText $pollResponse)"
+                throw (Get-NextcloudShareText 'LoginFailed' -FormatArgs @(Get-HttpErrorText $pollResponse))
             }
 
             try { $credentials = $pollResponse.Body | ConvertFrom-Json }
@@ -426,14 +734,14 @@ function Start-NextcloudLoginFlow {
                 throw 'Die von Nextcloud gelieferten Anmeldedaten sind unvollständig.'
             }
 
-            if ($StatusCallback) { & $StatusCallback "Verbunden als $($credentials.loginName)." }
+            if ($StatusCallback) { & $StatusCallback (Get-NextcloudShareText 'ConnectedAs' -FormatArgs @($credentials.loginName)) }
             return [pscustomobject]@{
                 ServerUrl   = ([string]$credentials.server).TrimEnd('/')
                 Username    = [string]$credentials.loginName
                 AppPassword = [string]$credentials.appPassword
             }
         }
-        throw "Die Nextcloud-Anmeldung wurde nicht innerhalb von $TimeoutMinutes Minuten abgeschlossen."
+        throw (Get-NextcloudShareText 'LoginTimeout' -FormatArgs @($TimeoutMinutes))
     }
     finally {
         $client.Dispose()
@@ -611,7 +919,7 @@ function New-RemoteUploadBatchFolder {
 
     $monthFolder = Join-RemotePath ([string]$Config.RemoteUploadFolder) (Get-Date -Format 'yyyy-MM')
     Ensure-RemoteFolder -Client $Client -Config $Config -RemoteFolder $monthFolder
-    $baseName = 'Freigabe-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+    $baseName = (Get-NextcloudShareText 'BatchFolderPrefix') + (Get-Date -Format 'yyyyMMdd-HHmmss')
     for ($number = 1; $number -le 9999; $number++) {
         $folderName = if ($number -eq 1) { $baseName } else { "$baseName-$number" }
         $candidate = Join-RemotePath $monthFolder $folderName
@@ -678,7 +986,7 @@ function Send-FileToNextcloud {
         $content.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::new('application/octet-stream')
         $response = Invoke-HttpRequest -Client $Client -Method 'PUT' -Uri (Get-WebDavUri $Config $RemotePath) -Content $content
         if (-not $response.IsSuccess) {
-            throw "Die Datei konnte nicht nach Nextcloud hochgeladen werden: $(Get-HttpErrorText $response)"
+            throw (Get-NextcloudShareText 'UploadFailed' -FormatArgs @(Get-HttpErrorText $response))
         }
     }
     finally {
@@ -694,7 +1002,7 @@ function Get-OcsUri {
 function Throw-NextcloudPublicShareError {
     param([Parameter(Mandatory = $true)][string]$Message)
 
-    $exception = [InvalidOperationException]::new("Der Freigabelink konnte nicht erzeugt werden: $Message")
+    $exception = [InvalidOperationException]::new((Get-NextcloudShareText 'ShareCreateFailed' -FormatArgs @($Message)))
     $normalized = $Message.ToLowerInvariant()
     if (($normalized -match 'password|passw') -and
         ($normalized -match 'enforc|required|erzwung|erforder')) {
@@ -850,13 +1158,13 @@ function Enable-PublicShareNotifications {
     $content = [System.Net.Http.FormUrlEncodedContent]::new($pairs)
     $response = Invoke-HttpRequest -Client $Client -Method 'POST' -Uri (Get-OcsUri $Config 'apps/abonnieren/api/v1/share-notifications') -Content $content -Headers @{ 'OCS-APIRequest' = 'true'; 'Accept' = 'application/json' }
     if (-not $response.IsSuccess) {
-        throw "Die E-Mail-Benachrichtigungen konnten nicht aktiviert werden: $(Get-HttpErrorText $response)"
+        throw (Get-NextcloudShareText 'NotificationsFailed' -FormatArgs @(Get-HttpErrorText $response))
     }
 
     try { $result = $response.Body | ConvertFrom-Json }
     catch { throw 'Die App Abonnieren hat beim Aktivieren der E-Mail-Benachrichtigungen keine gültige JSON-Antwort geliefert.' }
     if (-not (Test-OcsSuccess $result) -or $result.ocs.data.enabled -ne $true -or [int]$result.ocs.data.eventMask -ne $EventMask) {
-        throw "Die E-Mail-Benachrichtigungen konnten nicht aktiviert werden: $($result.ocs.meta.message)"
+        throw (Get-NextcloudShareText 'NotificationsFailed' -FormatArgs @($result.ocs.meta.message))
     }
 }
 
@@ -928,12 +1236,12 @@ function Search-NextcloudSharees {
     $relative = 'apps/files_sharing/api/v1/sharees?format=json&lookup=false&perPage=20&shareType=0&itemType={0}&search={1}' -f [Uri]::EscapeDataString($ItemType), [Uri]::EscapeDataString($Search)
     $response = Invoke-HttpRequest -Client $Client -Method 'GET' -Uri (Get-OcsUri $Config $relative) -Headers @{ 'OCS-APIRequest' = 'true'; 'Accept' = 'application/json' }
     if (-not $response.IsSuccess) {
-        throw "Die Benutzersuche ist fehlgeschlagen: $(Get-HttpErrorText $response)"
+        throw (Get-NextcloudShareText 'UserSearchFailed' -FormatArgs @(Get-HttpErrorText $response))
     }
     try { $result = $response.Body | ConvertFrom-Json }
     catch { throw 'Nextcloud hat für die Benutzersuche keine gültige JSON-Antwort geliefert.' }
     if (-not (Test-OcsSuccess $result)) {
-        throw "Die Benutzersuche ist fehlgeschlagen: $($result.ocs.meta.message)"
+        throw (Get-NextcloudShareText 'UserSearchFailed' -FormatArgs @($result.ocs.meta.message))
     }
 
     $found = New-Object 'System.Collections.Generic.List[NextcloudShare.Sharee]'
@@ -996,7 +1304,7 @@ function New-UserShare {
                 ShareWith     = $ShareWith
             }
         }
-        throw "Die Freigabe für den Benutzer konnte nicht erzeugt werden: $errorText"
+        throw (Get-NextcloudShareText 'UserShareFailed' -FormatArgs @($errorText))
     }
 
     try { $result = $response.Body | ConvertFrom-Json }
@@ -1010,7 +1318,7 @@ function New-UserShare {
                 ShareWith     = $ShareWith
             }
         }
-        throw "Die Freigabe für den Benutzer konnte nicht erzeugt werden: $message"
+        throw (Get-NextcloudShareText 'UserShareFailed' -FormatArgs @($message))
     }
     $shareId = Get-ShareIdFromData -Data $result.ocs.data
     return [pscustomobject]@{
@@ -1052,7 +1360,7 @@ function Get-InternalFileLink {
     $xml = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:fileid /></d:prop></d:propfind>'
     $content = [System.Net.Http.StringContent]::new($xml, [Text.Encoding]::UTF8, 'application/xml')
     $response = Invoke-HttpRequest -Client $Client -Method 'PROPFIND' -Uri (Get-WebDavUri $Config $RemotePath) -Content $content -Headers @{ 'Depth' = '0' }
-    if (-not $response.IsSuccess) { throw "Der interne Link konnte nicht ermittelt werden: $(Get-HttpErrorText $response)" }
+    if (-not $response.IsSuccess) { throw (Get-NextcloudShareText 'InternalLinkFailed' -FormatArgs @(Get-HttpErrorText $response)) }
 
     try {
         [xml]$document = $response.Body
@@ -1092,7 +1400,7 @@ function Show-ShareOptionsDialog {
     $searchTimer.Interval = 300
 
     $form = New-Object Windows.Forms.Form
-    $form.Text = 'Über Nextcloud teilen'
+    $form.Text = Get-NextcloudShareText 'ShareDialogTitle'
     $form.Size = New-Object Drawing.Size(520, 452)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
@@ -1108,7 +1416,7 @@ function Show-ShareOptionsDialog {
         [IO.Path]::GetFileName($LocalPaths[0])
     }
     else {
-        "$($LocalPaths.Count) Dateien – gemeinsamer Link zu einem neuen Ordner"
+        (Get-NextcloudShareText 'SharedFilesFolder' -FormatArgs @($LocalPaths.Count))
     }
     $fileLabel.Font = New-Object Drawing.Font($fileLabel.Font, [Drawing.FontStyle]::Bold)
     $form.Controls.Add($fileLabel)
@@ -1116,38 +1424,38 @@ function Show-ShareOptionsDialog {
     $modeLabel = New-Object Windows.Forms.Label
     $modeLabel.Location = New-Object Drawing.Point(18, 70)
     $modeLabel.Size = New-Object Drawing.Size(150, 22)
-    $modeLabel.Text = 'Freigabeart:'
+    $modeLabel.Text = Get-NextcloudShareText 'ShareTypeLabel'
     $form.Controls.Add($modeLabel)
 
     $mode = New-Object Windows.Forms.ComboBox
     $mode.Location = New-Object Drawing.Point(175, 67)
     $mode.Size = New-Object Drawing.Size(310, 24)
     $mode.DropDownStyle = 'DropDownList'
-    [void]$mode.Items.Add('Externer Link')
-    [void]$mode.Items.Add('Interner Link (Berechtigung erforderlich)')
+    [void]$mode.Items.Add((Get-NextcloudShareText 'ShareTypePublic'))
+    [void]$mode.Items.Add((Get-NextcloudShareText 'ShareTypeInternal'))
     $mode.SelectedIndex = if ($Config.DefaultMode -eq 'Internal') { 1 } else { 0 }
     $form.Controls.Add($mode)
 
     $permissionLabel = New-Object Windows.Forms.Label
     $permissionLabel.Location = New-Object Drawing.Point(18, 112)
     $permissionLabel.Size = New-Object Drawing.Size(150, 22)
-    $permissionLabel.Text = 'Berechtigung:'
+    $permissionLabel.Text = Get-NextcloudShareText 'PermissionLabel'
     $form.Controls.Add($permissionLabel)
 
     $permission = New-Object Windows.Forms.ComboBox
     $permission.Location = New-Object Drawing.Point(175, 109)
     $permission.Size = New-Object Drawing.Size(310, 24)
     $permission.DropDownStyle = 'DropDownList'
-    [void]$permission.Items.Add('Nur lesen')
-    [void]$permission.Items.Add('Lesen und bearbeiten')
-    [void]$permission.Items.Add('Lesen, bearbeiten, erstellen und löschen')
+    [void]$permission.Items.Add((Get-NextcloudShareText 'PermissionRead'))
+    [void]$permission.Items.Add((Get-NextcloudShareText 'PermissionReadWrite'))
+    [void]$permission.Items.Add((Get-NextcloudShareText 'PermissionFull'))
     $permission.SelectedIndex = 0
     $form.Controls.Add($permission)
 
     $expiryLabel = New-Object Windows.Forms.Label
     $expiryLabel.Location = New-Object Drawing.Point(18, 151)
     $expiryLabel.Size = New-Object Drawing.Size(150, 22)
-    $expiryLabel.Text = 'Gültig in Tagen:'
+    $expiryLabel.Text = Get-NextcloudShareText 'ExpiryLabel'
     $form.Controls.Add($expiryLabel)
 
     $expiry = New-Object Windows.Forms.NumericUpDown
@@ -1161,7 +1469,7 @@ function Show-ShareOptionsDialog {
     $passwordLabel = New-Object Windows.Forms.Label
     $passwordLabel.Location = New-Object Drawing.Point(18, 190)
     $passwordLabel.Size = New-Object Drawing.Size(150, 22)
-    $passwordLabel.Text = 'Optionales Passwort:'
+    $passwordLabel.Text = Get-NextcloudShareText 'PasswordLabel'
     $form.Controls.Add($passwordLabel)
 
     $password = New-Object Windows.Forms.TextBox
@@ -1173,41 +1481,41 @@ function Show-ShareOptionsDialog {
     $notificationLabel = New-Object Windows.Forms.Label
     $notificationLabel.Location = New-Object Drawing.Point(18, 226)
     $notificationLabel.Size = New-Object Drawing.Size(150, 44)
-    $notificationLabel.Text = 'Benachrichtigen bei:'
+    $notificationLabel.Text = Get-NextcloudShareText 'NotifyLabel'
     $form.Controls.Add($notificationLabel)
 
     $notifyOnDownload = New-Object Windows.Forms.CheckBox
     $notifyOnDownload.Location = New-Object Drawing.Point(175, 223)
     $notifyOnDownload.Size = New-Object Drawing.Size(130, 24)
-    $notifyOnDownload.Text = 'Download'
+    $notifyOnDownload.Text = Get-NextcloudShareText 'NotifyDownload'
     $notifyOnDownload.Checked = $false
     $form.Controls.Add($notifyOnDownload)
 
     $notifyOnUpload = New-Object Windows.Forms.CheckBox
     $notifyOnUpload.Location = New-Object Drawing.Point(330, 223)
     $notifyOnUpload.Size = New-Object Drawing.Size(130, 24)
-    $notifyOnUpload.Text = 'Upload'
+    $notifyOnUpload.Text = Get-NextcloudShareText 'NotifyUpload'
     $notifyOnUpload.Checked = $false
     $form.Controls.Add($notifyOnUpload)
 
     $notifyOnModification = New-Object Windows.Forms.CheckBox
     $notifyOnModification.Location = New-Object Drawing.Point(175, 251)
     $notifyOnModification.Size = New-Object Drawing.Size(130, 24)
-    $notifyOnModification.Text = 'Änderung'
+    $notifyOnModification.Text = Get-NextcloudShareText 'NotifyModify'
     $notifyOnModification.Checked = $false
     $form.Controls.Add($notifyOnModification)
 
     $notifyOnDeletion = New-Object Windows.Forms.CheckBox
     $notifyOnDeletion.Location = New-Object Drawing.Point(330, 251)
     $notifyOnDeletion.Size = New-Object Drawing.Size(130, 24)
-    $notifyOnDeletion.Text = 'Löschung'
+    $notifyOnDeletion.Text = Get-NextcloudShareText 'NotifyDelete'
     $notifyOnDeletion.Checked = $false
     $form.Controls.Add($notifyOnDeletion)
 
     $userLabel = New-Object Windows.Forms.Label
     $userLabel.Location = New-Object Drawing.Point(18, 292)
     $userLabel.Size = New-Object Drawing.Size(150, 22)
-    $userLabel.Text = 'Benutzer:'
+    $userLabel.Text = Get-NextcloudShareText 'UsersLabel'
     $form.Controls.Add($userLabel)
 
     $userSearch = New-Object Windows.Forms.TextBox
@@ -1215,7 +1523,7 @@ function Show-ShareOptionsDialog {
     $userSearch.Size = New-Object Drawing.Size(310, 24)
     $form.Controls.Add($userSearch)
     $searchTip = New-Object Windows.Forms.ToolTip
-    $searchTip.SetToolTip($userSearch, 'Name oder Benutzername eingeben')
+    $searchTip.SetToolTip($userSearch, (Get-NextcloudShareText 'SearchUsersTip'))
 
     $selectedUsers = New-Object Windows.Forms.ListBox
     $selectedUsers.Location = New-Object Drawing.Point(175, 319)
@@ -1226,7 +1534,7 @@ function Show-ShareOptionsDialog {
     $removeUser = New-Object Windows.Forms.Button
     $removeUser.Location = New-Object Drawing.Point(175, 421)
     $removeUser.Size = New-Object Drawing.Size(110, 26)
-    $removeUser.Text = 'Entfernen'
+    $removeUser.Text = Get-NextcloudShareText 'RemoveUser'
     $form.Controls.Add($removeUser)
 
     $suggestions = New-Object Windows.Forms.ListBox
@@ -1245,7 +1553,7 @@ function Show-ShareOptionsDialog {
     $ok = New-Object Windows.Forms.Button
     $ok.Location = New-Object Drawing.Point(300, 370)
     $ok.Size = New-Object Drawing.Size(88, 28)
-    $ok.Text = 'Teilen'
+    $ok.Text = Get-NextcloudShareText 'ShareButton'
     $ok.DialogResult = [Windows.Forms.DialogResult]::None
     $form.Controls.Add($ok)
     $form.AcceptButton = $ok
@@ -1253,7 +1561,7 @@ function Show-ShareOptionsDialog {
     $cancel = New-Object Windows.Forms.Button
     $cancel.Location = New-Object Drawing.Point(397, 370)
     $cancel.Size = New-Object Drawing.Size(88, 28)
-    $cancel.Text = 'Abbrechen'
+    $cancel.Text = Get-NextcloudShareText 'CancelButton'
     $cancel.DialogResult = [Windows.Forms.DialogResult]::Cancel
     $form.Controls.Add($cancel)
     $form.CancelButton = $cancel
@@ -1295,7 +1603,7 @@ function Show-ShareOptionsDialog {
                         $state.SearchErrorShown = $true
                         [Windows.Forms.MessageBox]::Show(
                             $_.Exception.Message,
-                            'Benutzersuche',
+                            (Get-NextcloudShareText 'UserSearchTitle'),
                             'OK',
                             'Warning'
                         ) | Out-Null
@@ -1405,8 +1713,8 @@ function Show-ShareOptionsDialog {
     $ok.Add_Click({
         if ($mode.SelectedIndex -eq 1 -and $state.SelectedUsers.Count -lt 1) {
             [Windows.Forms.MessageBox]::Show(
-                'Bitte wählen Sie mindestens einen Benutzer aus, der Zugriff erhalten soll.',
-                'Über Nextcloud teilen',
+                (Get-NextcloudShareText 'SelectUserRequired'),
+                (Get-NextcloudShareText 'ShareDialogTitle'),
                 'OK',
                 'Information'
             ) | Out-Null
@@ -1449,14 +1757,14 @@ function Show-ShareOptionsDialog {
         if (-not $notifyOnModification.Enabled) { $notifyOnModification.Checked = $false }
         if (-not $notifyOnDeletion.Enabled) { $notifyOnDeletion.Checked = $false }
         if ($external) {
-            $hint.Text = 'Die Auswahl erstellt oder aktualisiert das Abonnement für diese Datei beziehungsweise diesen Ordner.'
+            $hint.Text = Get-NextcloudShareText 'ShareHintPublic'
             $hint.Location = New-Object Drawing.Point(18, 292)
             $form.ClientSize = New-Object Drawing.Size(504, 412)
             $ok.Location = New-Object Drawing.Point(300, 370)
             $cancel.Location = New-Object Drawing.Point(397, 370)
         }
         else {
-            $hint.Text = 'Die ausgewählten Benutzer erhalten Zugriff mit der oben gewählten Berechtigung und Ablaufzeit. Der interne Link wird in die Zwischenablage kopiert und alle Benutzer per E-Mail benachrichtigt.'
+            $hint.Text = Get-NextcloudShareText 'ShareHintInternal'
             $hint.Location = New-Object Drawing.Point(18, 456)
             $form.ClientSize = New-Object Drawing.Size(504, 560)
             $ok.Location = New-Object Drawing.Point(300, 516)
@@ -1547,7 +1855,7 @@ function Show-RequiredSharePasswordDialog {
     param([Parameter(Mandatory = $true)][string]$ItemDescription)
 
     $form = New-Object Windows.Forms.Form
-    $form.Text = 'Passwort für öffentlichen Nextcloud-Link'
+    $form.Text = Get-NextcloudShareText 'PasswordDialogTitle'
     $form.Size = New-Object Drawing.Size(560, 250)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
@@ -1566,7 +1874,7 @@ function Show-RequiredSharePasswordDialog {
     $hint = New-Object Windows.Forms.Label
     $hint.Location = New-Object Drawing.Point(18, 48)
     $hint.Size = New-Object Drawing.Size(510, 42)
-    $hint.Text = 'Der Nextcloud-Server verlangt für öffentliche Links ein Passwort. Ein sicheres Passwort wurde automatisch erzeugt.'
+    $hint.Text = Get-NextcloudShareText 'PasswordRequiredHint'
     $form.Controls.Add($hint)
 
     $password = New-Object Windows.Forms.TextBox
@@ -1578,23 +1886,23 @@ function Show-RequiredSharePasswordDialog {
     $regenerate = New-Object Windows.Forms.Button
     $regenerate.Location = New-Object Drawing.Point(420, 98)
     $regenerate.Size = New-Object Drawing.Size(108, 27)
-    $regenerate.Text = 'Neu erzeugen'
+    $regenerate.Text = Get-NextcloudShareText 'RegeneratePassword'
     $regenerate.Add_Click({ $password.Text = New-RandomSharePassword })
     $form.Controls.Add($regenerate)
 
     $copyHint = New-Object Windows.Forms.Label
     $copyHint.Location = New-Object Drawing.Point(18, 135)
     $copyHint.Size = New-Object Drawing.Size(510, 30)
-    $copyHint.Text = 'Nach erfolgreicher Freigabe werden Link und Passwort gemeinsam in die Zwischenablage kopiert.'
+    $copyHint.Text = Get-NextcloudShareText 'PasswordCopyHint'
     $form.Controls.Add($copyHint)
 
     $ok = New-Object Windows.Forms.Button
     $ok.Location = New-Object Drawing.Point(326, 174)
     $ok.Size = New-Object Drawing.Size(105, 28)
-    $ok.Text = 'Link erstellen'
+    $ok.Text = Get-NextcloudShareText 'CreateLink'
     $ok.Add_Click({
         if ([string]::IsNullOrWhiteSpace($password.Text)) {
-            [Windows.Forms.MessageBox]::Show($form, 'Bitte geben Sie ein Passwort ein.', 'Nextcloud-Freigabe', 'OK', 'Warning') | Out-Null
+            [Windows.Forms.MessageBox]::Show($form, (Get-NextcloudShareText 'PasswordRequired'), (Get-NextcloudShareText 'AppTitle'), 'OK', 'Warning') | Out-Null
             return
         }
         $form.DialogResult = [Windows.Forms.DialogResult]::OK
@@ -1606,7 +1914,7 @@ function Show-RequiredSharePasswordDialog {
     $cancel = New-Object Windows.Forms.Button
     $cancel.Location = New-Object Drawing.Point(440, 174)
     $cancel.Size = New-Object Drawing.Size(88, 28)
-    $cancel.Text = 'Abbrechen'
+    $cancel.Text = Get-NextcloudShareText 'CancelButton'
     $cancel.DialogResult = [Windows.Forms.DialogResult]::Cancel
     $form.Controls.Add($cancel)
     $form.CancelButton = $cancel
@@ -1628,7 +1936,7 @@ function Show-ConfigurationDialog {
         -not [string]::IsNullOrWhiteSpace([string]$existing.EncryptedAppPassword)
 
     $form = New-Object Windows.Forms.Form
-    $form.Text = 'Nextcloud-Freigabe konfigurieren'
+    $form.Text = Get-NextcloudShareText 'ConfigureTitle'
     $form.Size = New-Object Drawing.Size(640, 570)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
@@ -1645,11 +1953,11 @@ function Show-ConfigurationDialog {
         Get-NextcloudClientSyncRoot -ServerUrl ([string]$admin.ServerUrl)
     }
     $rows = @(
-        @{ Key='ServerUrl'; Label='Nextcloud-URL'; Value=if($existing){$existing.ServerUrl}else{$admin.ServerUrl} },
-        @{ Key='Username'; Label='Nextcloud-Benutzer'; Value=if($existing){$existing.Username}else{[Environment]::UserName} },
-        @{ Key='LocalRoot'; Label='Lokaler Nextcloud-Ordner (optional)'; Value=$defaultLocalRoot },
-        @{ Key='RemoteRoot'; Label='Serverpfad des lokalen Ordners'; Value=if($existing){$existing.RemoteSyncRoot}else{$admin.RemoteSyncRoot} },
-        @{ Key='UploadFolder'; Label='Upload-Ordner'; Value=if($existing){$existing.RemoteUploadFolder}else{$admin.RemoteUploadFolder} }
+        @{ Key='ServerUrl'; Label=(Get-NextcloudShareText 'LabelServerUrl'); Value=if($existing){$existing.ServerUrl}else{$admin.ServerUrl} },
+        @{ Key='Username'; Label=(Get-NextcloudShareText 'LabelUsername'); Value=if($existing){$existing.Username}else{[Environment]::UserName} },
+        @{ Key='LocalRoot'; Label=(Get-NextcloudShareText 'LabelLocalRoot'); Value=$defaultLocalRoot },
+        @{ Key='RemoteRoot'; Label=(Get-NextcloudShareText 'LabelRemoteRoot'); Value=if($existing){$existing.RemoteSyncRoot}else{$admin.RemoteSyncRoot} },
+        @{ Key='UploadFolder'; Label=(Get-NextcloudShareText 'LabelUploadFolder'); Value=if($existing){$existing.RemoteUploadFolder}else{$admin.RemoteUploadFolder} }
     )
 
     $y = 24
@@ -1677,7 +1985,7 @@ function Show-ConfigurationDialog {
     $browse = New-Object Windows.Forms.Button
     $browse.Location = New-Object Drawing.Point(495, 112)
     $browse.Size = New-Object Drawing.Size(100, 25)
-    $browse.Text = 'Durchsuchen'
+    $browse.Text = Get-NextcloudShareText 'Browse'
     $browse.Add_Click({
         $dialog = New-Object Windows.Forms.FolderBrowserDialog
         $dialog.SelectedPath = $fields.LocalRoot.Text
@@ -1689,15 +1997,15 @@ function Show-ConfigurationDialog {
     $modeLabel = New-Object Windows.Forms.Label
     $modeLabel.Location = New-Object Drawing.Point(18, 260)
     $modeLabel.Size = New-Object Drawing.Size(210, 22)
-    $modeLabel.Text = 'Standard-Freigabeart'
+    $modeLabel.Text = Get-NextcloudShareText 'DefaultShareType'
     $form.Controls.Add($modeLabel)
 
     $mode = New-Object Windows.Forms.ComboBox
     $mode.Location = New-Object Drawing.Point(235, 257)
     $mode.Size = New-Object Drawing.Size(360, 24)
     $mode.DropDownStyle = 'DropDownList'
-    [void]$mode.Items.Add('Externer Link')
-    [void]$mode.Items.Add('Interner Link')
+    [void]$mode.Items.Add((Get-NextcloudShareText 'ShareTypePublic'))
+    [void]$mode.Items.Add((Get-NextcloudShareText 'ShareTypeInternalShort'))
     $mode.SelectedIndex = if ($existing -and $existing.DefaultMode -eq 'Internal') { 1 } else { 0 }
     $mode.Enabled = [bool]$admin.AllowShareDefaultsOverride
     $form.Controls.Add($mode)
@@ -1705,7 +2013,7 @@ function Show-ConfigurationDialog {
     $daysLabel = New-Object Windows.Forms.Label
     $daysLabel.Location = New-Object Drawing.Point(18, 307)
     $daysLabel.Size = New-Object Drawing.Size(210, 22)
-    $daysLabel.Text = 'Standard-Ablaufzeit (Tage)'
+    $daysLabel.Text = Get-NextcloudShareText 'DefaultExpiry'
     $form.Controls.Add($daysLabel)
 
     $days = New-Object Windows.Forms.NumericUpDown
@@ -1720,38 +2028,38 @@ function Show-ConfigurationDialog {
     $statusTitle = New-Object Windows.Forms.Label
     $statusTitle.Location = New-Object Drawing.Point(18, 352)
     $statusTitle.Size = New-Object Drawing.Size(210, 22)
-    $statusTitle.Text = 'Nextcloud-Verbindung'
+    $statusTitle.Text = Get-NextcloudShareText 'ConnectionLabel'
     $form.Controls.Add($statusTitle)
 
     $status = New-Object Windows.Forms.Label
     $status.Location = New-Object Drawing.Point(235, 352)
     $status.Size = New-Object Drawing.Size(360, 42)
-    $status.Text = if ($hasLoginFlowCredentials) { "Verbunden als $($existing.Username)" } else { 'Noch nicht verbunden' }
+    $status.Text = if ($hasLoginFlowCredentials) { Get-NextcloudShareText 'ConnectedAs' -FormatArgs @($existing.Username) } else { Get-NextcloudShareText 'NotConnected' }
     $form.Controls.Add($status)
 
     $connect = New-Object Windows.Forms.Button
     $connect.Location = New-Object Drawing.Point(235, 400)
     $connect.Size = New-Object Drawing.Size(190, 30)
-    $connect.Text = 'Mit Nextcloud verbinden'
+    $connect.Text = Get-NextcloudShareText 'ConnectNextcloud'
     $form.Controls.Add($connect)
 
     $security = New-Object Windows.Forms.Label
     $security.Location = New-Object Drawing.Point(18, 447)
     $security.Size = New-Object Drawing.Size(575, 42)
-    $security.Text = 'Die Anmeldung wird im Standardbrowser durchgeführt. Nach „Grant access“ speichert Windows den von Nextcloud ausgestellten Zugriffstoken verschlüsselt mit DPAPI.'
+    $security.Text = Get-NextcloudShareText 'LoginSecurityHint'
     $form.Controls.Add($security)
 
     $save = New-Object Windows.Forms.Button
     $save.Location = New-Object Drawing.Point(410, 498)
     $save.Size = New-Object Drawing.Size(88, 28)
-    $save.Text = 'Speichern'
+    $save.Text = Get-NextcloudShareText 'Save'
     $save.Enabled = [bool]$hasLoginFlowCredentials
     $form.Controls.Add($save)
 
     $cancel = New-Object Windows.Forms.Button
     $cancel.Location = New-Object Drawing.Point(507, 498)
     $cancel.Size = New-Object Drawing.Size(88, 28)
-    $cancel.Text = 'Abbrechen'
+    $cancel.Text = Get-NextcloudShareText 'CancelButton'
     $cancel.DialogResult = [Windows.Forms.DialogResult]::Cancel
     $form.Controls.Add($cancel)
     $form.CancelButton = $cancel
@@ -1792,12 +2100,12 @@ function Show-ConfigurationDialog {
             Test-NextcloudServerUrl $fields.ServerUrl.Text
             if (-not [string]::IsNullOrWhiteSpace($fields.LocalRoot.Text) -and
                 -not (Test-Path -LiteralPath $fields.LocalRoot.Text -PathType Container)) {
-                throw 'Der angegebene lokale Nextcloud-Ordner existiert nicht. Bitte wählen Sie einen vorhandenen Ordner oder lassen Sie das Feld leer.'
+                throw (Get-NextcloudShareText 'LocalFolderMissing')
             }
 
             $credentials = Start-NextcloudLoginFlow -ServerUrl $fields.ServerUrl.Text -StatusCallback {
                 param($message)
-                if ($form.IsDisposed) { throw 'Die Nextcloud-Anmeldung wurde abgebrochen.' }
+                if ($form.IsDisposed) { throw (Get-NextcloudShareText 'LoginCancelled') }
                 $status.Text = $message
                 [Windows.Forms.Application]::DoEvents()
             }
@@ -1806,7 +2114,7 @@ function Show-ConfigurationDialog {
             $encrypted = Protect-AppPassword $credentials.AppPassword
             $config = & $buildConfig $credentials.ServerUrl $credentials.Username $encrypted
             Test-NextcloudShareConfig $config
-            $status.Text = 'WebDAV-Benutzer-ID wird ermittelt ...'
+            $status.Text = Get-NextcloudShareText 'ResolvingWebDav'
             [Windows.Forms.Application]::DoEvents()
             $config = Initialize-NextcloudWebDavIdentity -Config $config -Force
             $form.DialogResult = [Windows.Forms.DialogResult]::OK
@@ -1815,8 +2123,8 @@ function Show-ConfigurationDialog {
         catch {
             if (-not $form.IsDisposed) {
                 $form.TopMost = $true
-                $status.Text = 'Verbindung fehlgeschlagen'
-                [Windows.Forms.MessageBox]::Show($form, $_.Exception.Message, 'Nextcloud-Anmeldung', 'OK', 'Error') | Out-Null
+                $status.Text = Get-NextcloudShareText 'ConnectionFailed'
+                [Windows.Forms.MessageBox]::Show($form, $_.Exception.Message, (Get-NextcloudShareText 'LoginDialogTitle'), 'OK', 'Error') | Out-Null
             }
         }
         finally {
@@ -1837,7 +2145,7 @@ function Show-ConfigurationDialog {
             $form.Close()
         }
         catch {
-            [Windows.Forms.MessageBox]::Show($form, $_.Exception.Message, 'Nextcloud-Konfiguration', 'OK', 'Error') | Out-Null
+            [Windows.Forms.MessageBox]::Show($form, $_.Exception.Message, (Get-NextcloudShareText 'ConfigDialogTitle'), 'OK', 'Error') | Out-Null
         }
     })
 
@@ -1852,7 +2160,7 @@ function Show-ConfigurationDialog {
 function Show-ProgressWindow {
     param([string]$Text)
     $form = New-Object Windows.Forms.Form
-    $form.Text = 'Nextcloud-Freigabe'
+    $form.Text = Get-NextcloudShareText 'AppTitle'
     $form.Size = New-Object Drawing.Size(440, 125)
     $form.StartPosition = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
@@ -1909,7 +2217,7 @@ function Show-ClipboardFallbackDialog {
     param([Parameter(Mandatory = $true)][string]$Text)
 
     $form = New-Object Windows.Forms.Form
-    $form.Text = 'Nextcloud-Freigabe erstellt'
+    $form.Text = Get-NextcloudShareText 'ClipboardDialogTitle'
     $form.Size = New-Object Drawing.Size(680, 280)
     $form.FormBorderStyle = 'FixedDialog'
     $form.MaximizeBox = $false
@@ -1921,7 +2229,7 @@ function Show-ClipboardFallbackDialog {
     $label = New-Object Windows.Forms.Label
     $label.Location = New-Object Drawing.Point(18, 18)
     $label.Size = New-Object Drawing.Size(630, 44)
-    $label.Text = 'Die Freigabe wurde erfolgreich erstellt, aber die Windows-Zwischenablage ist momentan blockiert. Markieren Sie den Text und kopieren Sie ihn mit Strg+C oder versuchen Sie es erneut.'
+    $label.Text = Get-NextcloudShareText 'ClipboardBlocked'
     $form.Controls.Add($label)
 
     $value = New-Object Windows.Forms.TextBox
@@ -1936,20 +2244,20 @@ function Show-ClipboardFallbackDialog {
     $status = New-Object Windows.Forms.Label
     $status.Location = New-Object Drawing.Point(18, 182)
     $status.Size = New-Object Drawing.Size(365, 34)
-    $status.Text = 'Link und gegebenenfalls Passwort bleiben hier sichtbar.'
+    $status.Text = Get-NextcloudShareText 'ClipboardHint'
     $form.Controls.Add($status)
 
     $retry = New-Object Windows.Forms.Button
     $retry.Location = New-Object Drawing.Point(410, 190)
     $retry.Size = New-Object Drawing.Size(130, 30)
-    $retry.Text = 'Erneut kopieren'
+    $retry.Text = Get-NextcloudShareText 'CopyAgain'
     $retry.Add_Click({
         if (Set-ClipboardTextWithRetry -Text $value.Text) {
             $form.DialogResult = [Windows.Forms.DialogResult]::OK
             $form.Close()
         }
         else {
-            $status.Text = 'Zwischenablage weiterhin blockiert. Bitte Strg+C verwenden.'
+            $status.Text = Get-NextcloudShareText 'ClipboardStillBlocked'
             $value.SelectAll()
             $value.Focus()
         }
@@ -1959,7 +2267,7 @@ function Show-ClipboardFallbackDialog {
     $close = New-Object Windows.Forms.Button
     $close.Location = New-Object Drawing.Point(550, 190)
     $close.Size = New-Object Drawing.Size(98, 30)
-    $close.Text = 'Schließen'
+    $close.Text = Get-NextcloudShareText 'Close'
     $close.DialogResult = [Windows.Forms.DialogResult]::Cancel
     $form.Controls.Add($close)
     $form.CancelButton = $close
@@ -1976,13 +2284,13 @@ function Show-SuccessNotification {
         [string]$Mode
     )
     $clipboardText = $Link
-    $notificationText = 'Der Link wurde in die Zwischenablage kopiert.'
+    $notificationText = Get-NextcloudShareText 'SuccessLinkCopied'
     if ($Mode -eq 'Internal') {
-        $notificationText = 'Der Link wurde in die Zwischenablage kopiert und alle Benutzer per E-Mail benachrichtigt.'
+        $notificationText = Get-NextcloudShareText 'SuccessInternalNotified'
     }
     elseif (-not [string]::IsNullOrWhiteSpace($Password)) {
-        $clipboardText = "Link: $Link`r`nPasswort: $Password"
-        $notificationText = 'Link und Passwort wurden in die Zwischenablage kopiert.'
+        $clipboardText = Get-NextcloudShareText 'ClipboardLinkPassword' -FormatArgs @($Link, $Password)
+        $notificationText = Get-NextcloudShareText 'SuccessLinkAndPassword'
     }
     if (-not (Set-ClipboardTextWithRetry -Text $clipboardText)) {
         Show-ClipboardFallbackDialog -Text $clipboardText
@@ -1992,7 +2300,7 @@ function Show-SuccessNotification {
     try {
         $notify.Icon = [Drawing.SystemIcons]::Information
         $notify.Visible = $true
-        $notify.BalloonTipTitle = 'Nextcloud-Freigabe'
+        $notify.BalloonTipTitle = Get-NextcloudShareText 'AppTitle'
         $notify.BalloonTipText = $notificationText
         $notify.ShowBalloonTip(3500)
         Start-Sleep -Milliseconds 1200

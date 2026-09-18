@@ -8,7 +8,7 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$productVersion = '2.1.1'
+$productVersion = '2.2.2'
 $activeSetupVersion = ($productVersion -replace '\.', ',') + ',0'
 $activeSetupGuid = '{8A55C457-62A4-4ED5-90F3-884DA52DBF10}'
 $programFilesRoot = if (-not [string]::IsNullOrWhiteSpace($env:ProgramW6432)) { $env:ProgramW6432 } else { $env:ProgramFiles }
@@ -33,6 +33,23 @@ $registryView = if ([Environment]::Is64BitOperatingSystem) {
 }
 else {
     [Microsoft.Win32.RegistryView]::Registry32
+}
+
+function Get-InstallUiLanguage {
+    try {
+        $name = [string](Get-UICulture).Name
+        if ($name -like 'de*') { return 'de' }
+    }
+    catch { }
+    return 'en'
+}
+
+function Get-InstallStartMenuShortcutPaths {
+    $dir = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
+    return @(
+        (Join-Path $dir 'Nextcloud-Freigabe konfigurieren.lnk'),
+        (Join-Path $dir 'Configure Nextcloud Share.lnk')
+    )
 }
 
 function Write-InstallLog {
@@ -62,8 +79,11 @@ function Test-CurrentInstallation {
         }
     }
 
-    $shortcutPath = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'
-    if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) {
+    $shortcutFound = $false
+    foreach ($shortcutPath in (Get-InstallStartMenuShortcutPaths)) {
+        if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) { $shortcutFound = $true; break }
+    }
+    if (-not $shortcutFound) {
         Write-InstallLog 'Installationsprüfung: Startmenü-Verknüpfung fehlt.'
         return $false
     }
@@ -228,10 +248,14 @@ foreach ($file in ($files + $optionalFiles)) {
     }
 }
 
+$uiLanguage = Get-InstallUiLanguage
+$shellShareCaption = if ($uiLanguage -eq 'en') { 'Share via Nextcloud' } else { 'Über Nextcloud teilen' }
+$shellShareOptionsCaption = if ($uiLanguage -eq 'en') { 'Share via Nextcloud (options) ...' } else { 'Über Nextcloud teilen (mit Optionen) ...' }
+
 $localMachine = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $registryView)
 try {
-    Set-MachineShellVerb -RegistryRoot $localMachine -KeyName 'NextcloudShare' -Caption 'Über Nextcloud teilen' -Mode 'Quick'
-    Set-MachineShellVerb -RegistryRoot $localMachine -KeyName 'NextcloudShareOptions' -Caption 'Über Nextcloud teilen (mit Optionen) ...' -Mode 'Options'
+    Set-MachineShellVerb -RegistryRoot $localMachine -KeyName 'NextcloudShare' -Caption $shellShareCaption -Mode 'Quick'
+    Set-MachineShellVerb -RegistryRoot $localMachine -KeyName 'NextcloudShareOptions' -Caption $shellShareOptionsCaption -Mode 'Options'
 
     $activeSetupPath = "Software\Microsoft\Active Setup\Installed Components\$activeSetupGuid"
     $activeSetup = $localMachine.CreateSubKey($activeSetupPath)
@@ -277,7 +301,13 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigurationPath)) {
 
 $commonStartMenu = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
 New-Item -ItemType Directory -Path $commonStartMenu -Force | Out-Null
-$shortcutPath = Join-Path $commonStartMenu 'Nextcloud-Freigabe konfigurieren.lnk'
+foreach ($oldShortcut in (Get-InstallStartMenuShortcutPaths)) {
+    if (Test-Path -LiteralPath $oldShortcut) { Remove-Item -LiteralPath $oldShortcut -Force }
+}
+$neutralShortcut = Join-Path $commonStartMenu 'NextcloudShare.lnk'
+if (Test-Path -LiteralPath $neutralShortcut) { Remove-Item -LiteralPath $neutralShortcut -Force }
+$shortcutName = if ($uiLanguage -eq 'en') { 'Configure Nextcloud Share.lnk' } else { 'Nextcloud-Freigabe konfigurieren.lnk' }
+$shortcutPath = Join-Path $commonStartMenu $shortcutName
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $wsh = New-Object -ComObject WScript.Shell
 $shortcut = $wsh.CreateShortcut($shortcutPath)
