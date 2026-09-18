@@ -196,9 +196,7 @@ catch { }
 foreach ($candidate in @(
     (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\NextcloudShare.lnk'),
     (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'),
-    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Configure Nextcloud Share.lnk'),
-    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\NextcloudShare konfigurieren.lnk'),
-    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Configure NextcloudShare.lnk')
+    (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Configure Nextcloud Share.lnk')
 )) {
     if (Test-Path -LiteralPath $candidate) { Remove-Item -LiteralPath $candidate -Force }
 }

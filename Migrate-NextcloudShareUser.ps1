@@ -60,13 +60,9 @@ if (Test-Path -LiteralPath $adminConfigPath -PathType Leaf) {
     }
 }
 
-foreach ($oldShortcut in @(
-    (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'),
-    (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Configure Nextcloud Share.lnk')
-)) {
-    if (Test-Path -LiteralPath $oldShortcut) {
-        Remove-Item -LiteralPath $oldShortcut -Force
-    }
+$oldShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'
+if (Test-Path -LiteralPath $oldShortcut) {
+    Remove-Item -LiteralPath $oldShortcut -Force
 }
 
 try {

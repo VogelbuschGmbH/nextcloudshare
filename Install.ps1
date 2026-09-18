@@ -44,22 +44,11 @@ function Get-InstallUiLanguage {
     return 'en'
 }
 
-function Get-InstallStartMenuDirectory {
-    Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
-}
-
-function Get-InstallStartMenuShortcutPath {
-    Join-Path (Get-InstallStartMenuDirectory) 'NextcloudShare.lnk'
-}
-
 function Get-InstallStartMenuShortcutPaths {
-    $dir = Get-InstallStartMenuDirectory
+    $dir = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
     return @(
-        (Get-InstallStartMenuShortcutPath),
         (Join-Path $dir 'Nextcloud-Freigabe konfigurieren.lnk'),
-        (Join-Path $dir 'Configure Nextcloud Share.lnk'),
-        (Join-Path $dir 'NextcloudShare konfigurieren.lnk'),
-        (Join-Path $dir 'Configure NextcloudShare.lnk')
+        (Join-Path $dir 'Configure Nextcloud Share.lnk')
     )
 }
 
@@ -90,7 +79,11 @@ function Test-CurrentInstallation {
         }
     }
 
-    if (-not (Test-Path -LiteralPath (Get-InstallStartMenuShortcutPath) -PathType Leaf)) {
+    $shortcutFound = $false
+    foreach ($shortcutPath in (Get-InstallStartMenuShortcutPaths)) {
+        if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) { $shortcutFound = $true; break }
+    }
+    if (-not $shortcutFound) {
         Write-InstallLog 'Installationsprüfung: Startmenü-Verknüpfung fehlt.'
         return $false
     }
@@ -306,12 +299,15 @@ if (-not [string]::IsNullOrWhiteSpace($ConfigurationPath)) {
     Write-InstallLog "Zentrale Konfiguration wurde übernommen: $ConfigurationPath"
 }
 
-$commonStartMenu = Get-InstallStartMenuDirectory
+$commonStartMenu = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
 New-Item -ItemType Directory -Path $commonStartMenu -Force | Out-Null
 foreach ($oldShortcut in (Get-InstallStartMenuShortcutPaths)) {
     if (Test-Path -LiteralPath $oldShortcut) { Remove-Item -LiteralPath $oldShortcut -Force }
 }
-$shortcutPath = Get-InstallStartMenuShortcutPath
+$neutralShortcut = Join-Path $commonStartMenu 'NextcloudShare.lnk'
+if (Test-Path -LiteralPath $neutralShortcut) { Remove-Item -LiteralPath $neutralShortcut -Force }
+$shortcutName = if ($uiLanguage -eq 'en') { 'Configure Nextcloud Share.lnk' } else { 'Nextcloud-Freigabe konfigurieren.lnk' }
+$shortcutPath = Join-Path $commonStartMenu $shortcutName
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $wsh = New-Object -ComObject WScript.Shell
 $shortcut = $wsh.CreateShortcut($shortcutPath)
