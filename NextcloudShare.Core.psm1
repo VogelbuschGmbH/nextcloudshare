@@ -1,7 +1,7 @@
 ﻿Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$script:ProductVersion = '2.2.1'
+$script:ProductVersion = '2.2.2'
 $script:UiLanguage = $null
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -67,10 +67,45 @@ function Get-NextcloudShareLanguageFromCulture {
     return 'en'
 }
 
+function Set-NextcloudShareUserShellVerbs {
+    param([string]$Language)
+
+    if ([string]::IsNullOrWhiteSpace($Language)) { return }
+    $shareCaption = if ($Language -eq 'de') { 'Über Nextcloud teilen' } else { 'Share via Nextcloud' }
+    $optionsCaption = if ($Language -eq 'de') { 'Über Nextcloud teilen (mit Optionen) ...' } else { 'Share via Nextcloud (options) ...' }
+    $wscriptPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+    $launcherPath = Join-Path $PSScriptRoot 'NextcloudShare.vbs'
+    $user = [Microsoft.Win32.Registry]::CurrentUser
+    foreach ($entry in @(
+        @{ Name = 'NextcloudShare'; Caption = $shareCaption; Mode = 'Quick' },
+        @{ Name = 'NextcloudShareOptions'; Caption = $optionsCaption; Mode = 'Options' }
+    )) {
+        $key = $user.CreateSubKey("Software\Classes\*\shell\$($entry.Name)")
+        if ($null -eq $key) { continue }
+        try {
+            $key.SetValue('MUIVerb', [string]$entry.Caption, [Microsoft.Win32.RegistryValueKind]::String)
+            $key.SetValue('Icon', 'shell32.dll,167', [Microsoft.Win32.RegistryValueKind]::String)
+            $key.SetValue('MultiSelectModel', 'Player', [Microsoft.Win32.RegistryValueKind]::String)
+            $commandKey = $key.CreateSubKey('command')
+            if ($null -eq $commandKey) { continue }
+            try {
+                $command = '"{0}" "{1}" {2} "%1"' -f $wscriptPath, $launcherPath, [string]$entry.Mode
+                $commandKey.SetValue('', $command, [Microsoft.Win32.RegistryValueKind]::String)
+            }
+            finally {
+                $commandKey.Dispose()
+            }
+        }
+        finally {
+            $key.Dispose()
+        }
+    }
+}
+
 $script:NextcloudShareText = @{
     de = @{
-        AppTitle                    = 'Nextcloud-Freigabe'
-        ErrorTitle                  = 'Nextcloud-Freigabe – Fehler'
+        AppTitle                    = 'NextcloudShare'
+        ErrorTitle                  = 'NextcloudShare – Fehler'
         ShareDialogTitle            = 'Über Nextcloud teilen'
         ShareTypeLabel              = 'Freigabeart:'
         ShareTypePublic             = 'Externer Link'
@@ -104,7 +139,7 @@ $script:NextcloudShareText = @{
         PasswordCopyHint            = 'Nach erfolgreicher Freigabe werden Link und Passwort gemeinsam in die Zwischenablage kopiert.'
         CreateLink                  = 'Link erstellen'
         PasswordRequired            = 'Bitte geben Sie ein Passwort ein.'
-        ConfigureTitle              = 'Nextcloud-Freigabe konfigurieren'
+        ConfigureTitle              = 'NextcloudShare konfigurieren'
         LabelServerUrl              = 'Nextcloud-URL'
         LabelUsername               = 'Nextcloud-Benutzer'
         LabelLocalRoot              = 'Lokaler Nextcloud-Ordner (optional)'
@@ -164,14 +199,14 @@ $script:NextcloudShareText = @{
         CopyAgain                   = 'Erneut kopieren'
         ClipboardStillBlocked       = 'Zwischenablage weiterhin blockiert. Bitte Strg+C verwenden.'
         Close                       = 'Schließen'
-        ClipboardDialogTitle        = 'Nextcloud-Freigabe erstellt'
+        ClipboardDialogTitle        = 'NextcloudShare erstellt'
         SuccessLinkCopied           = 'Der Link wurde in die Zwischenablage kopiert.'
         SuccessLinkAndPassword      = 'Link und Passwort wurden in die Zwischenablage kopiert.'
         SuccessInternalNotified     = 'Der Link wurde in die Zwischenablage kopiert und alle Benutzer per E-Mail benachrichtigt.'
         ClipboardLinkPassword       = "Link: {0}`r`nPasswort: {1}"
         ShellShare                  = 'Über Nextcloud teilen'
         ShellShareOptions           = 'Über Nextcloud teilen (mit Optionen) ...'
-        ConfigureShortcutName       = 'Nextcloud-Freigabe konfigurieren.lnk'
+        ConfigureShortcutName       = 'NextcloudShare.lnk'
         BatchFolderPrefix           = 'Freigabe-'
         NotificationsFailed         = 'Die E-Mail-Benachrichtigungen konnten nicht aktiviert werden: {0}'
         ShareCreateFailed           = 'Der Freigabelink konnte nicht erzeugt werden: {0}'
@@ -181,8 +216,8 @@ $script:NextcloudShareText = @{
         UploadFailed                = 'Die Datei konnte nicht nach Nextcloud hochgeladen werden: {0}'
     }
     en = @{
-        AppTitle                    = 'Nextcloud Share'
-        ErrorTitle                  = 'Nextcloud Share – Error'
+        AppTitle                    = 'NextcloudShare'
+        ErrorTitle                  = 'NextcloudShare – Error'
         ShareDialogTitle            = 'Share via Nextcloud'
         ShareTypeLabel              = 'Share type:'
         ShareTypePublic             = 'Public link'
@@ -216,7 +251,7 @@ $script:NextcloudShareText = @{
         PasswordCopyHint            = 'After a successful share, the link and password are copied to the clipboard together.'
         CreateLink                  = 'Create link'
         PasswordRequired            = 'Please enter a password.'
-        ConfigureTitle              = 'Configure Nextcloud Share'
+        ConfigureTitle              = 'Configure NextcloudShare'
         LabelServerUrl              = 'Nextcloud URL'
         LabelUsername               = 'Nextcloud user'
         LabelLocalRoot              = 'Local Nextcloud folder (optional)'
@@ -276,14 +311,14 @@ $script:NextcloudShareText = @{
         CopyAgain                   = 'Copy again'
         ClipboardStillBlocked       = 'Clipboard still blocked. Please use Ctrl+C.'
         Close                       = 'Close'
-        ClipboardDialogTitle        = 'Nextcloud share created'
+        ClipboardDialogTitle        = 'NextcloudShare created'
         SuccessLinkCopied           = 'The link was copied to the clipboard.'
         SuccessLinkAndPassword      = 'The link and password were copied to the clipboard.'
         SuccessInternalNotified     = 'The link was copied to the clipboard and all users were notified by email.'
         ClipboardLinkPassword       = "Link: {0}`r`nPassword: {1}"
         ShellShare                  = 'Share via Nextcloud'
         ShellShareOptions           = 'Share via Nextcloud (options) ...'
-        ConfigureShortcutName       = 'Configure Nextcloud Share.lnk'
+        ConfigureShortcutName       = 'NextcloudShare.lnk'
         BatchFolderPrefix           = 'Share-'
         NotificationsFailed         = 'Email notifications could not be enabled: {0}'
         ShareCreateFailed           = 'The share link could not be created: {0}'
@@ -299,6 +334,7 @@ function Get-NextcloudShareUiLanguage {
         return [string]$script:UiLanguage
     }
     $script:UiLanguage = Get-NextcloudShareLanguageFromCulture
+    try { Set-NextcloudShareUserShellVerbs -Language $script:UiLanguage } catch { }
     return $script:UiLanguage
 }
 

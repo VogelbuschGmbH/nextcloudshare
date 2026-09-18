@@ -60,9 +60,21 @@ if (Test-Path -LiteralPath $adminConfigPath -PathType Leaf) {
     }
 }
 
-$oldShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'
-if (Test-Path -LiteralPath $oldShortcut) {
-    Remove-Item -LiteralPath $oldShortcut -Force
+foreach ($oldShortcut in @(
+    (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Nextcloud-Freigabe konfigurieren.lnk'),
+    (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Configure Nextcloud Share.lnk')
+)) {
+    if (Test-Path -LiteralPath $oldShortcut) {
+        Remove-Item -LiteralPath $oldShortcut -Force
+    }
+}
+
+try {
+    Import-Module (Join-Path $PSScriptRoot 'NextcloudShare.Core.psm1') -Force -DisableNameChecking
+    Write-MigrationLog "UI-Sprache=$(Get-NextcloudShareUiLanguage)"
+}
+catch {
+    Write-MigrationLog "Explorer-Befehle konnten nicht benutzerspezifisch gesetzt werden: $($_.Exception.Message)"
 }
 
 Write-MigrationLog 'Benutzermigration erfolgreich abgeschlossen.'

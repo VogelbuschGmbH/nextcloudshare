@@ -109,7 +109,7 @@ function Join-NextcloudShareExplorerBatch {
 try {
     Write-NextcloudShareLog "Start: Mode=$Mode"
     Import-Module (Join-Path $PSScriptRoot 'NextcloudShare.Core.psm1') -Force -DisableNameChecking
-    Write-NextcloudShareLog 'Modul geladen.'
+    Write-NextcloudShareLog "Modul geladen. UI-Sprache=$(Get-NextcloudShareUiLanguage)"
     if ($Mode -eq 'Configure') {
         Show-ConfigurationDialog | Out-Null
         exit 0
